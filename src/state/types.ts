@@ -50,4 +50,10 @@ export interface GraphViewProps {
   onViewportChange: (viewport: Viewport | null) => void
   theme: Theme
   onToggleTheme: () => void
+  /**
+   * CSS px of the graph covered by an overlay at the bottom (the phone sheet).
+   * Default view, reset, zoom buttons and trace keep content within the
+   * uncovered area. 0 or undefined when nothing covers the graph.
+   */
+  insetBottom?: number
 }
