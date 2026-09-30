@@ -220,7 +220,7 @@ listing this table.
 
 ### 5.4 Axes, grid, ticks
 - Grid: minor lines at 1/5 of major step, major at a "nice" step (1, 2, 5 × 10^n) giving ~80–120px spacing.
-- Tick labels: `text-xs` (12px) system font, 4 sig figs max. Labels clamp to the viewport edge
+- Tick labels: `text-xs` (12px) system font. Use as many decimals as the step needs so adjacent labels are always distinct (team-lead decision; supersedes the earlier "4 sig figs max"). Labels clamp to the viewport edge
   when the axis is off-screen.
 - Colours in §8.2.
 
