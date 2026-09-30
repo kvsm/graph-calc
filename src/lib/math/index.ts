@@ -1,4 +1,4 @@
-export { parseExpression } from './parseExpression'
+export { MAX_INPUT_LENGTH, parseExpression } from './parseExpression'
 export type { CompiledExpression, ExpressionForm, ParseResult } from './parseExpression'
 export type { ExpressionError, ExpressionErrorCode } from './errors'
 export type { Params } from './compile'

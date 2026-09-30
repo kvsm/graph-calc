@@ -1,6 +1,6 @@
 import { compileAst, type Params } from './compile'
 import { ExpressionSyntaxError, fallbackMessage, type ExpressionError } from './errors'
-import { isKnownConstant } from './functions'
+import { isKnownConstant, isKnownFunction } from './functions'
 import { parseToAst } from './mathjs'
 
 export type ExpressionForm =
@@ -33,6 +33,9 @@ export type ParseResult =
   | { ok: false; error: ExpressionError }
 
 const NO_PARAMS: Params = Object.freeze({})
+
+/** Longest accepted input (CR-03: keeps parsing and sampling fast). */
+export const MAX_INPUT_LENGTH = 500
 
 /** Characters allowed in the raw input (before normalisation). */
 const ALLOWED_CHAR = /[A-Za-z0-9\s.,+\-*/^()=_Ͱ-Ͽ×·⋅÷−²³]/
@@ -101,7 +104,12 @@ function classifyLhs(lhs: string, rhs: string, position: number): Lhs | ParseRes
   const match = LHS_FUNCTION.exec(lhs)
   if (match) {
     if (match[2] !== 'x') return fail('invalid-lhs', fallbackMessage(match[2] || lhs), position)
-    return { form: 'function', name: match[1] }
+    const fnName = match[1]
+    if (fnName === 'x' || fnName === 'y') return fail('invalid-lhs', ONLY_Y_SUPPORTED, position)
+    if (isKnownFunction(fnName) || isKnownConstant(fnName)) {
+      return fail('invalid-lhs', `${fnName} is built in. Use another name, e.g. f(x) = …`, position)
+    }
+    return { form: 'function', name: fnName }
   }
   if (isKnownConstant(lhs)) {
     return fail(
@@ -163,6 +171,9 @@ export function parseExpression(input: string): ParseResult {
 
 function parseUnsafe(input: string): ParseResult {
   if (input.trim() === '') return fail('empty', 'Type an expression, e.g. y = x^2')
+  if (input.length > MAX_INPUT_LENGTH) {
+    return fail('too-long', `This expression is too long. Keep it under ${MAX_INPUT_LENGTH} characters.`, MAX_INPUT_LENGTH)
+  }
 
   const powIndex = input.indexOf('**')
   if (powIndex !== -1) return fail('syntax', 'Use ^ for powers, e.g. 2^x.', powIndex)
@@ -223,7 +234,12 @@ function parseUnsafe(input: string): ParseResult {
   const { fn, parameters } = compileAst(ast, { reserved: name === undefined ? [] : [name] })
 
   const evaluate = (x: number, params: Params = NO_PARAMS): number => {
-    const y = fn(x, params)
+    let y: number
+    try {
+      y = fn(x, params)
+    } catch {
+      return NaN // evaluate is total: never throws (CR-02)
+    }
     return Number.isFinite(y) ? y : NaN
   }
 

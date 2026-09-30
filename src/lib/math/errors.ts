@@ -12,6 +12,7 @@ export type ExpressionErrorCode =
   | 'unsupported-syntax'
   | 'uses-y'
   | 'self-reference'
+  | 'too-long'
   | 'syntax'
 
 export interface ExpressionError {

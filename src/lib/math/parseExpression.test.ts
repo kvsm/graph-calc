@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { parseExpression, type CompiledExpression, type ParseResult } from './index'
+import { compileAst, TOO_COMPLEX_MESSAGE } from './compile'
+import { parseToAst } from './mathjs'
+import { MAX_INPUT_LENGTH, parseExpression, type CompiledExpression, type ParseResult } from './index'
 
 function ok(input: string): CompiledExpression {
   const result = parseExpression(input)
@@ -433,5 +435,47 @@ describe('parseExpression: more §3.1 wording', () => {
       expect(() => parseExpression(input)).not.toThrow()
       expect(performance.now() - t0).toBeLessThan(250)
     }
+  })
+})
+
+describe('parseExpression: review fixes (CR-02, CR-03, CR-19, UX-15)', () => {
+  it('rejects input over MAX_INPUT_LENGTH with a friendly error', () => {
+    const e = err('x+'.repeat(300) + 'x')
+    expect(e.code).toBe('too-long')
+    expect(e.message).toBe(`This expression is too long. Keep it under ${MAX_INPUT_LENGTH} characters.`)
+    expect(parseExpression('x'.repeat(MAX_INPUT_LENGTH)).ok).toBe(true)
+  })
+
+  it('caps the number of AST nodes', () => {
+    const ast = parseToAst(Array.from({ length: 800 }, () => 'x').join('+'))
+    expect(() => compileAst(ast)).toThrow(TOO_COMPLEX_MESSAGE)
+  })
+
+  it('evaluates long implicit products without deep recursion', () => {
+    const { fn } = compileAst(parseToAst('x'.repeat(50_000)))
+    expect(fn(1, {})).toBe(1)
+  })
+
+  it('evaluate never throws', () => {
+    const e = ok('x'.repeat(MAX_INPUT_LENGTH))
+    expect(() => e.evaluate(2)).not.toThrow()
+    expect(e.evaluate(10)).toBeNaN() // 10^500 overflows to Infinity -> NaN
+  })
+
+  it.each([
+    ['sin(x) = x', 'sin is built in. Use another name, e.g. f(x) = …'],
+    ['pi(x) = x', 'pi is built in. Use another name, e.g. f(x) = …'],
+    ['x(x) = 1', 'Only y = … is supported. Write it as y = … or just the expression.'],
+    ['y(x) = 1', 'Only y = … is supported. Write it as y = … or just the expression.'],
+  ])('rejects reserved function names on the left: %s', (input, message) => {
+    const e = err(input)
+    expect(e.code).toBe('invalid-lhs')
+    expect(e.message).toBe(message)
+  })
+
+  it('suggests the lower-case function name', () => {
+    expect(err('SIN(x)').message).toBe('Unknown function "SIN". Did you mean sin?')
+    expect(err('Sqrt(x)').message).toBe('Unknown function "Sqrt". Did you mean sqrt?')
+    expect(err('foo(x)').message).toBe('Unknown function "foo". Try sin, cos, tan, sqrt, abs, ln, log or exp.')
   })
 })

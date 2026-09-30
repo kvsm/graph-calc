@@ -85,6 +85,10 @@ export function segmentIdentifier(name: string): IdentifierSegment[] {
 
 const addBrackets = (fn: string, arg = 'x') => `Add brackets: ${fn}(${arg}).`
 
+/** Upper bound on AST nodes compiled per expression (keeps sampling fast; CR-03). */
+export const MAX_NODES = 1000
+export const TOO_COMPLEX_MESSAGE = 'This expression is too complex to graph. Try splitting it up.'
+
 export interface CompileOptions {
   /** Extra names that may not appear (e.g. "f" in "f(x) = …"). */
   reserved?: readonly string[]
@@ -107,9 +111,16 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
   const seen = new Set<string>()
   const reserved = new Set(options.reserved ?? [])
 
+  let nodeCount = 0
+
+  // A flat loop rather than nested closures, so long products can't overflow the stack.
   const product = (factors: Evaluator[]): Evaluator => {
     if (factors.length === 1) return factors[0]
-    return factors.reduce((acc, f) => (x, p) => acc(x, p) * f(x, p))
+    return (x, p) => {
+      let result = 1
+      for (const f of factors) result *= f(x, p)
+      return result
+    }
   }
 
   const symbol = (name: string): Evaluator => {
@@ -230,6 +241,8 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
   }
 
   const visit = (node: MathNode): Evaluator => {
+    nodeCount += 1
+    if (nodeCount > MAX_NODES) throw new ExpressionSyntaxError('too-long', TOO_COMPLEX_MESSAGE)
     switch (node.type) {
       case 'ConstantNode': {
         const { value } = node as unknown as { value: unknown }
@@ -279,9 +292,12 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
         if (isAtomicSymbol(name) && args.length === 1) {
           return product([symbol(name), visit(args[0])])
         }
+        const lower = name.toLowerCase()
         throw new ExpressionSyntaxError(
           'unknown-function',
-          `Unknown function "${name}". Try sin, cos, tan, sqrt, abs, ln, log or exp.`,
+          lower !== name && isKnownFunction(lower)
+            ? `Unknown function "${name}". Did you mean ${lower}?`
+            : `Unknown function "${name}". Try sin, cos, tan, sqrt, abs, ln, log or exp.`,
         )
       }
       default:
