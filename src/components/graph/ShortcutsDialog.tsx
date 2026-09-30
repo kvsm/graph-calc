@@ -45,8 +45,15 @@ export function ShortcutsDialog({
           </TableHeader>
           <TableBody>
             {SHORTCUTS.map((s) => (
-              <TableRow key={s.keys + s.action}>
-                <TableCell className="font-mono whitespace-nowrap">{s.keys}</TableCell>
+              <TableRow key={s.keys.join(" ") + s.action}>
+                <TableCell className="whitespace-nowrap">
+                  {s.keys.map((k, i) => (
+                    <span key={k + i}>
+                      {i > 0 && (s.join === "or" ? <span className="px-1 text-muted-foreground">or</span> : " ")}
+                      <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs">{k}</kbd>
+                    </span>
+                  ))}
+                </TableCell>
                 <TableCell className="whitespace-normal">{s.action}</TableCell>
               </TableRow>
             ))}

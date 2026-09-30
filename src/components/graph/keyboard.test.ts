@@ -34,9 +34,9 @@ describe("graphKeyAction (not tracing)", () => {
 })
 
 describe("graphKeyAction (tracing)", () => {
-  it("moves the trace point with left/right (Shift: 10px)", () => {
-    expect(graphKeyAction({ key: "ArrowLeft" }, true)).toEqual({ type: "traceStep", pixels: -1 })
-    expect(graphKeyAction({ key: "ArrowRight", shiftKey: true }, true)).toEqual({ type: "traceStep", pixels: 10 })
+  it("steps the trace point by grid steps with left/right (Shift: major steps)", () => {
+    expect(graphKeyAction({ key: "ArrowLeft" }, true)).toEqual({ type: "traceStep", dir: -1, major: false })
+    expect(graphKeyAction({ key: "ArrowRight", shiftKey: true }, true)).toEqual({ type: "traceStep", dir: 1, major: true })
   })
 
   it("switches curves with ] [ and up/down", () => {
@@ -56,7 +56,12 @@ describe("graphKeyAction (tracing)", () => {
 
 describe("SHORTCUTS", () => {
   it("lists every §5.2 key", () => {
-    const keys = SHORTCUTS.map((s) => s.keys).join(" ")
+    const keys = SHORTCUTS.flatMap((s) => s.keys)
     for (const k of ["←", "+", "−", "0", "T", "]", "[", "Escape", "Tab", "?"]) expect(keys).toContain(k)
+  })
+
+  it("never mentions pixels (UX-25)", () => {
+    for (const s of SHORTCUTS) expect(s.action).not.toMatch(/\bpx\b|pixel/i)
+    expect(SHORTCUTS.some((s) => s.action.includes("Shift: bigger steps"))).toBe(true)
   })
 })

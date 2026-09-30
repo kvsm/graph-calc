@@ -6,6 +6,7 @@ import { LIVE_REGION_ID } from "@/lib/announce"
 import { parseExpression } from "@/lib/math"
 import { spanX, type Viewport } from "@/lib/viewport"
 import type { PlotItem, Theme } from "@/state/types"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { EMPTY_GRAPH_HINT, GRAPH_WRAPPER_LABEL, GraphView } from "./GraphView"
 
 function plot(id: string, text: string, extra: Partial<PlotItem> = {}): PlotItem {
@@ -47,7 +48,7 @@ interface HarnessProps {
 function Harness({ plots = [plot("a", "y = x")], initial = null, theme = "light", onChange, onToggleTheme }: HarnessProps) {
   const [vp, setVp] = useState<Viewport | null>(initial)
   return (
-    <>
+    <TooltipProvider>
       <div id={LIVE_REGION_ID} aria-live="polite" />
       <GraphView
         plots={plots}
@@ -60,7 +61,7 @@ function Harness({ plots = [plot("a", "y = x")], initial = null, theme = "light"
         theme={theme}
         onToggleTheme={onToggleTheme ?? (() => {})}
       />
-    </>
+    </TooltipProvider>
   )
 }
 
@@ -122,8 +123,8 @@ describe("GraphView toolbar", () => {
 
   it("disables zoom in at the 1e-6 span limit", () => {
     render(<Harness initial={{ xMin: 0, xMax: 1e-6, yMin: 0, yMax: 0.75e-6 }} />)
-    expect(screen.getByRole("button", { name: "Zoom in" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Zoom out" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "Zoom in" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("button", { name: "Zoom out" })).not.toHaveAttribute("aria-disabled")
   })
 
   it("toggles theme with the right label", async () => {
@@ -193,13 +194,13 @@ describe("GraphView keyboard", () => {
     expect(tip).toHaveTextContent("y = x")
     expect(tip).toHaveTextContent("(0, 0)")
     await user.keyboard("{ArrowRight}")
-    expect(screen.getByTestId("trace-tooltip")).toHaveTextContent("(0.025, 0.025)")
+    expect(screen.getByTestId("trace-tooltip")).toHaveTextContent("(0.4, 0.4)")
     await user.keyboard("{Shift>}{ArrowLeft}{/Shift}")
-    expect(screen.getByTestId("trace-tooltip")).toHaveTextContent("(-0.225, -0.225)")
+    expect(screen.getByTestId("trace-tooltip")).toHaveTextContent("(0, 0)")
     await user.keyboard("]")
     tip = screen.getByTestId("trace-tooltip")
     expect(tip).toHaveTextContent("y = 2x + 1")
-    expect(tip).toHaveTextContent("(-0.225, 0.55)")
+    expect(tip).toHaveTextContent("(0, 1)")
     await user.keyboard("[[")
     expect(screen.getByTestId("trace-tooltip")).toHaveTextContent("y = x")
     await user.keyboard("{Escape}")
@@ -375,30 +376,30 @@ describe("GraphView sampling", () => {
       expression: a.expression,
       ...extra,
     })
-    const { rerender } = render(<GraphView {...props([make()], { k: 1 })} />)
+    const { rerender } = render(<TooltipProvider><GraphView {...props([make()], { k: 1 })} /></TooltipProvider>)
     const after = a.evaluate.mock.calls.length
     expect(after).toBeGreaterThan(0)
     // New arrays / objects every keystroke, including a new params object with an unrelated change.
-    rerender(<GraphView {...props([make()], { k: 2 })} />)
-    rerender(<GraphView {...props([make(), make({ id: "hidden", visible: false })], { k: 3 })} />)
+    rerender(<TooltipProvider><GraphView {...props([make()], { k: 2 })} /></TooltipProvider>)
+    rerender(<TooltipProvider><GraphView {...props([make(), make({ id: "hidden", visible: false })], { k: 3 })} /></TooltipProvider>)
     // Colour change repaints without sampling.
-    rerender(<GraphView {...props([make({ colorIndex: 3 })], { k: 3 })} />)
+    rerender(<TooltipProvider><GraphView {...props([make({ colorIndex: 3 })], { k: 3 })} /></TooltipProvider>)
     expect(a.evaluate.mock.calls.length).toBe(after)
 
     // A new expression object re-samples.
     const b = counted("y = x^2")
-    rerender(<GraphView {...props([make({ expression: b.expression })])} />)
+    rerender(<TooltipProvider><GraphView {...props([make({ expression: b.expression })])} /></TooltipProvider>)
     expect(b.evaluate.mock.calls.length).toBeGreaterThan(0)
   })
 
   it("re-samples when a parameter the curve uses changes", () => {
     const a = counted("y = a*x")
     const p: PlotItem = { id: "a", label: "y = a*x", colorIndex: 0, visible: true, expression: a.expression }
-    const { rerender } = render(<GraphView {...props([p], { a: 1 })} />)
+    const { rerender } = render(<TooltipProvider><GraphView {...props([p], { a: 1 })} /></TooltipProvider>)
     const after = a.evaluate.mock.calls.length
-    rerender(<GraphView {...props([{ ...p }], { a: 1 })} />)
+    rerender(<TooltipProvider><GraphView {...props([{ ...p }], { a: 1 })} /></TooltipProvider>)
     expect(a.evaluate.mock.calls.length).toBe(after)
-    rerender(<GraphView {...props([{ ...p }], { a: 2 })} />)
+    rerender(<TooltipProvider><GraphView {...props([{ ...p }], { a: 2 })} /></TooltipProvider>)
     expect(a.evaluate.mock.calls.length).toBeGreaterThan(after)
   })
 })

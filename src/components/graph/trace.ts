@@ -1,6 +1,14 @@
 /** Pure trace helpers: hit-testing, keyboard stepping, curve cycling (UX-SPEC §5.1–5.3). */
 import type { Segment } from "@/lib/math"
-import { toScreenX, toScreenY, unitsPerPixel, type Size, type Vec2, type Viewport } from "@/lib/viewport"
+import {
+  tickStepForPixels,
+  toScreenX,
+  toScreenY,
+  unitsPerPixel,
+  type Size,
+  type Vec2,
+  type Viewport,
+} from "@/lib/viewport"
 
 /** Hover snaps to curves within this many screen px of the pointer. */
 export const TRACE_HIT_RADIUS_PX = 24
@@ -166,4 +174,21 @@ export function findTraceStart(f: (x: number) => number, vp: Viewport, size: Siz
     x: firstDefined.x,
     viewport: { xMin: vp.xMin, xMax: vp.xMax, yMin: vp.yMin + dy, yMax: vp.yMax + dy },
   }
+}
+
+/**
+ * Keyboard trace step (UX-SPEC §5.2, UX-17): move to the next minor grid line in
+ * `dir` (major grid line when `major`), snapping x to that grid so readouts are
+ * round. Uses the same nice step as the drawn grid; the result is an exact
+ * integer multiple of the step (no float noise).
+ */
+export function gridStepTraceX(x: number, vp: Viewport, size: Size, dir: 1 | -1, major: boolean): number {
+  const nice = tickStepForPixels(vp.xMax - vp.xMin, size.width)
+  const m = major ? nice.mantissa : nice.mantissa * 2
+  const e = major ? nice.exponent : nice.exponent - 1
+  const step = e >= 0 ? m * 10 ** e : m / 10 ** -e
+  const q = x / step
+  const k = dir > 0 ? Math.floor(q + 1e-9) + 1 : Math.ceil(q - 1e-9) - 1
+  const v = e >= 0 ? k * m * 10 ** e : (k * m) / 10 ** -e
+  return v === 0 ? 0 : v
 }

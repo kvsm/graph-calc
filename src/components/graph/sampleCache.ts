@@ -5,6 +5,7 @@
  */
 import { sampleFunction, type CompiledExpression, type Segment } from "@/lib/math"
 import type { Size, Viewport } from "@/lib/viewport"
+import { extendToDomainEdges } from "./edges"
 
 interface Entry {
   expression: CompiledExpression
@@ -58,7 +59,8 @@ export function createSampleCache(sampler: Sampler = sampleFunction): SampleCach
       ) {
         return hit.segments
       }
-      const segments = sampler((x) => expression.evaluate(x, params), {
+      const f = (x: number) => expression.evaluate(x, params)
+      const sampled = sampler(f, {
         xMin: vp.xMin,
         xMax: vp.xMax,
         yMin: vp.yMin,
@@ -66,6 +68,7 @@ export function createSampleCache(sampler: Sampler = sampleFunction): SampleCach
         pixelWidth: size.width,
         pixelHeight: size.height,
       })
+      const segments = extendToDomainEdges(f, sampled, (vp.xMax - vp.xMin) / Math.max(1, size.width))
       entries.set(id, { expression, paramValues, vp, width: size.width, height: size.height, segments })
       return segments
     },

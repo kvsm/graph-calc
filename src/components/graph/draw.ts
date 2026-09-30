@@ -2,7 +2,7 @@
 import type { Segment } from "@/lib/math"
 import { toScreenX, toScreenY, type Size, type Viewport } from "@/lib/viewport"
 import type { GraphColors } from "./colors"
-import { clampScreenY, computeGridLayout, type GridLayout } from "./layout"
+import { clampScreenY, computeGridLayout, estimateTextWidth, type GridLayout } from "./layout"
 
 /** Curve line widths (UX-SPEC §8.1). */
 export const CURVE_WIDTH = 2.5
@@ -53,6 +53,7 @@ export type Ctx2D = Pick<
   | "font"
   | "textAlign"
   | "textBaseline"
+  | "measureText"
 >
 
 /** Snap a 1px line to the pixel grid so it renders crisply. */
@@ -80,7 +81,12 @@ export function drawGraph(ctx: Ctx2D, input: DrawInput): GridLayout {
   ctx.fillStyle = colors.bg
   ctx.fillRect(0, 0, w, h)
 
-  const layout = computeGridLayout(vp, size)
+  ctx.font = LABEL_FONT
+  const measure = (text: string) => {
+    const tw = ctx.measureText?.(text)?.width
+    return typeof tw === "number" && Number.isFinite(tw) ? tw : estimateTextWidth(text)
+  }
+  const layout = computeGridLayout(vp, size, measure)
 
   ctx.lineWidth = 1
   ctx.strokeStyle = colors.grid

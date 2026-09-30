@@ -8,7 +8,7 @@ export type GraphKeyAction =
   | { type: "reset" }
   | { type: "toggleTrace" }
   | { type: "exitTrace" }
-  | { type: "traceStep"; pixels: number }
+  | { type: "traceStep"; dir: 1 | -1; major: boolean }
   | { type: "traceCurve"; dir: 1 | -1 }
   | { type: "help" }
 
@@ -27,9 +27,9 @@ export function graphKeyAction(e: KeyInput, tracing: boolean): GraphKeyAction | 
   if (tracing) {
     switch (e.key) {
       case "ArrowLeft":
-        return { type: "traceStep", pixels: shift ? -10 : -1 }
+        return { type: "traceStep", dir: -1, major: shift }
       case "ArrowRight":
-        return { type: "traceStep", pixels: shift ? 10 : 1 }
+        return { type: "traceStep", dir: 1, major: shift }
       case "ArrowUp":
       case "]":
         return { type: "traceCurve", dir: 1 }
@@ -70,17 +70,26 @@ export function graphKeyAction(e: KeyInput, tracing: boolean): GraphKeyAction | 
   return null
 }
 
-/** Rows for the keyboard shortcuts dialog. */
-export const SHORTCUTS: readonly { keys: string; action: string }[] = [
-  { keys: "← → ↑ ↓", action: "Pan 10% of the view (Shift: 50%)" },
-  { keys: "+ or =", action: "Zoom in" },
-  { keys: "− or _", action: "Zoom out" },
-  { keys: "0", action: "Reset view" },
-  { keys: "T", action: "Start or stop tracing" },
-  { keys: "] or ↑", action: "While tracing: next curve" },
-  { keys: "[ or ↓", action: "While tracing: previous curve" },
-  { keys: "← →", action: "While tracing: move along the curve (Shift: 10 px)" },
-  { keys: "Escape", action: "Stop tracing" },
-  { keys: "Tab", action: "Leave the graph" },
-  { keys: "?", action: "Show keyboard shortcuts" },
+/**
+ * Rows for the keyboard shortcuts dialog. Each entry in `keys` is shown as a key cap;
+ * alternatives are joined with "or", except arrow groups, which are listed side by side.
+ */
+export interface ShortcutRow {
+  keys: string[]
+  join: "or" | "none"
+  action: string
+}
+
+export const SHORTCUTS: readonly ShortcutRow[] = [
+  { keys: ["←", "→", "↑", "↓"], join: "none", action: "Pan the view (Shift: bigger steps)" },
+  { keys: ["+", "="], join: "or", action: "Zoom in" },
+  { keys: ["−", "_"], join: "or", action: "Zoom out" },
+  { keys: ["0"], join: "none", action: "Reset view" },
+  { keys: ["T"], join: "none", action: "Start or stop tracing" },
+  { keys: ["]", "↑"], join: "or", action: "While tracing: next curve" },
+  { keys: ["[", "↓"], join: "or", action: "While tracing: previous curve" },
+  { keys: ["←", "→"], join: "none", action: "While tracing: move along the curve by one grid step (Shift: bigger steps)" },
+  { keys: ["Escape"], join: "none", action: "Stop tracing" },
+  { keys: ["Tab"], join: "none", action: "Leave the graph" },
+  { keys: ["?"], join: "none", action: "Show keyboard shortcuts" },
 ]

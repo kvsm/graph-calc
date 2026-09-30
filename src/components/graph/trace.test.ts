@@ -3,6 +3,7 @@ import { defaultViewport, toScreenX, toScreenY } from "@/lib/viewport"
 import {
   cycleId,
   findTraceStart,
+  gridStepTraceX,
   findDefinedX,
   keepInView,
   nearestCurvePoint,
@@ -188,5 +189,40 @@ describe("findTraceStart (T entry point)", () => {
 
   it("stays within the visible x-range", () => {
     expect(findTraceStart((x) => (x > 10.01 ? 0 : NaN), vp, size)).toBeNull()
+  })
+})
+
+describe("gridStepTraceX (UX-17)", () => {
+  // Default 800x600 view: major step 2, minor step 0.4.
+  it("steps by the minor grid step, snapped to the grid", () => {
+    expect(gridStepTraceX(0, vp, size, 1, false)).toBe(0.4)
+    expect(gridStepTraceX(0.4, vp, size, 1, false)).toBe(0.8)
+    expect(gridStepTraceX(0.8, vp, size, 1, false)).toBe(1.2)
+    expect(gridStepTraceX(0.4, vp, size, -1, false)).toBe(0)
+    expect(gridStepTraceX(0, vp, size, -1, false)).toBe(-0.4)
+  })
+
+  it("snaps an off-grid x to the next grid line in the direction of travel", () => {
+    expect(gridStepTraceX(0.5682, vp, size, 1, false)).toBe(0.8)
+    expect(gridStepTraceX(0.5682, vp, size, -1, false)).toBe(0.4)
+  })
+
+  it("steps by the major step with Shift", () => {
+    expect(gridStepTraceX(0, vp, size, 1, true)).toBe(2)
+    expect(gridStepTraceX(1.3, vp, size, -1, true)).toBe(0)
+  })
+
+  it("produces round values with no float noise after many steps", () => {
+    let x = 0
+    for (let i = 0; i < 30; i++) x = gridStepTraceX(x, vp, size, 1, false)
+    expect(x).toBe(12)
+    const tiny = { xMin: -0.0005, xMax: 0.0005, yMin: -0.000375, yMax: 0.000375 }
+    let t = 0
+    for (let i = 0; i < 3; i++) t = gridStepTraceX(t, tiny, size, 1, false)
+    expect(String(t)).toBe("0.00006")
+  })
+
+  it("never returns -0", () => {
+    expect(Object.is(gridStepTraceX(0.4, vp, size, -1, false), -0)).toBe(false)
   })
 })

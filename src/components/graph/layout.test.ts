@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest"
 import { defaultViewport, spanX, spanY, type Viewport } from "@/lib/viewport"
-import { clampScreenY, computeGridLayout, effectiveViewport, EDGE_PAD, LABEL_HEIGHT } from "./layout"
+import {
+  clampScreenY,
+  computeGridLayout,
+  defaultViewportInset,
+  EDGE_CLIP,
+  EDGE_PAD,
+  effectiveViewport,
+  EMPTY_HINT_SIZE,
+  emptyHintPosition,
+  LABEL_HEIGHT,
+  shiftBy,
+  usableSize,
+  visibleRect,
+} from "./layout"
 
 const size = { width: 800, height: 600 }
 
@@ -24,7 +37,7 @@ describe("computeGridLayout", () => {
   it("draws a single 0 label at the origin, not one per axis", () => {
     const l = computeGridLayout(vp, size)
     expect(l.labels.filter((t) => t.text === "0")).toHaveLength(1)
-    expect(l.labels.map((t) => t.text)).toEqual(expect.arrayContaining(["-10", "-2", "2", "10", "-6", "6"]))
+    expect(l.labels.map((t) => t.text)).toEqual(expect.arrayContaining(["-8", "-2", "2", "8", "-6", "6"]))
   })
 
   it("puts x labels below the axis and y labels left of it", () => {
@@ -67,7 +80,7 @@ describe("computeGridLayout", () => {
       expect(t.x).toBeGreaterThanOrEqual(EDGE_PAD)
     }
     // Origin not visible: the x-axis "0" is not special-cased away; there is no 0 at x.
-    expect(l.labels.some((t) => t.text === "100")).toBe(true)
+    expect(l.labels.some((t) => t.text === "102")).toBe(true)
   })
 
   it("clamps y labels to the right edge when the y-axis is right of the view", () => {
@@ -142,5 +155,139 @@ describe("clampScreenY", () => {
     expect(clampScreenY(1e300, 600)).toBe(600 + 7000)
     expect(clampScreenY(-1e300, 600)).toBe(-7000)
     expect(clampScreenY(-Infinity, 600)).toBe(-7000)
+  })
+})
+
+describe("edge clipping of tick labels (UX-09)", () => {
+  const measure = (t: string) => t.length * 7
+
+  it("skips labels whose box would cross the canvas edge", () => {
+    const l = computeGridLayout(defaultViewport(size), size, measure)
+    // -10 and 10 sit exactly on the left/right edges.
+    expect(l.labels.some((t) => t.text === "-10")).toBe(false)
+    expect(l.labels.some((t) => t.text === "10")).toBe(false)
+    for (const t of l.labels) {
+      const w = measure(t.text)
+      const left = t.align === "center" ? t.x - w / 2 : t.align === "right" ? t.x - w : t.x
+      expect(left).toBeGreaterThanOrEqual(EDGE_CLIP)
+      expect(left + w).toBeLessThanOrEqual(size.width - EDGE_CLIP)
+      if (t.baseline === "middle") {
+        expect(t.y - LABEL_HEIGHT / 2).toBeGreaterThanOrEqual(EDGE_CLIP)
+        expect(t.y + LABEL_HEIGHT / 2).toBeLessThanOrEqual(size.height - EDGE_CLIP)
+      }
+    }
+  })
+
+  it("keeps long labels inside at span 10000 and near the top edge", () => {
+    const l = computeGridLayout({ xMin: -5000, xMax: 5000, yMin: -3750, yMax: 3750 }, size, measure)
+    expect(l.labels.some((t) => t.text === "-5000")).toBe(false)
+    expect(l.labels.some((t) => t.text === "-4000")).toBe(true)
+    const top = computeGridLayout({ xMin: -10, xMax: 10, yMin: -7.5, yMax: 6 }, size, measure)
+    expect(top.labels.some((t) => t.text === "6" && t.baseline === "middle")).toBe(false)
+  })
+
+  it("uses the supplied measure function", () => {
+    const wide = computeGridLayout(defaultViewport(size), size, () => 900)
+    expect(wide.labels.filter((t) => t.text !== "0")).toHaveLength(0)
+  })
+})
+
+describe("origin label (UX-10)", () => {
+  it("is a single 0 below-left of the origin, clear of both axes", () => {
+    const l = computeGridLayout(defaultViewport(size), size)
+    const zeros = l.labels.filter((t) => t.text === "0")
+    expect(zeros).toHaveLength(1)
+    const [z] = zeros
+    expect(z.align).toBe("right")
+    expect(z.baseline).toBe("top")
+    expect(z.x).toBeCloseTo(l.yAxis! - 4)
+    expect(z.y).toBeCloseTo(l.xAxis! + 4)
+  })
+
+  it("moves right of the y-axis when the axis is near the left edge", () => {
+    const vp = { xMin: -0.2, xMax: 19.8, yMin: -7.5, yMax: 7.5 }
+    const l = computeGridLayout(vp, size)
+    const z = l.labels.find((t) => t.text === "0")!
+    expect(z.align).toBe("left")
+    expect(z.x).toBeGreaterThan(l.yAxis!)
+  })
+})
+
+describe("bottom inset (UX-04)", () => {
+  const phone = { width: 375, height: 700 }
+
+  it("usableSize subtracts the inset, never below 1px", () => {
+    expect(usableSize(phone, 300)).toEqual({ width: 375, height: 400 })
+    expect(usableSize(phone, 0)).toEqual(phone)
+    expect(usableSize(phone, 5000).height).toBe(1)
+    expect(usableSize(phone, NaN)).toEqual(phone)
+    expect(usableSize(phone, -10)).toEqual(phone)
+  })
+
+  it("defaultViewportInset frames x in [-10, 10] at 1:1 with the origin centred in the uncovered area", () => {
+    const vp = defaultViewportInset(phone, 300)
+    expect(vp.xMin).toBe(-10)
+    expect(vp.xMax).toBe(10)
+    const upp = 20 / 375
+    expect(vp.yMax).toBeCloseTo(200 * upp)
+    expect(vp.yMin).toBeCloseTo(-500 * upp)
+    // 1:1 over the full canvas.
+    expect(spanY(vp) / spanX(vp)).toBeCloseTo(700 / 375)
+    expect(defaultViewportInset(phone, 0)).toEqual(defaultViewport(phone))
+  })
+
+  it("effectiveViewport(null) uses the inset default", () => {
+    expect(effectiveViewport(null, phone, 300)).toEqual(defaultViewportInset(phone, 300))
+  })
+
+  it("visibleRect drops the covered strip, and shiftBy applies its translation to the viewport", () => {
+    const vp = defaultViewportInset(phone, 300)
+    const rect = visibleRect(vp, phone, 300)
+    expect(rect.yMax).toBe(vp.yMax)
+    expect(rect.yMin).toBeCloseTo(-200 * (20 / 375))
+    expect(visibleRect(vp, phone, 0)).toBe(vp)
+    const moved = { ...rect, xMin: rect.xMin + 1, xMax: rect.xMax + 1, yMin: rect.yMin - 2, yMax: rect.yMax - 2 }
+    const out = shiftBy(vp, rect, moved)
+    expect(out.xMin).toBeCloseTo(vp.xMin + 1)
+    expect(out.yMin).toBeCloseTo(vp.yMin - 2)
+    expect(shiftBy(vp, rect, rect)).toBe(vp)
+  })
+})
+
+describe("emptyHintPosition (UX-01)", () => {
+  const box = (p: { x: number; y: number }) => ({
+    left: p.x - EMPTY_HINT_SIZE.width / 2,
+    right: p.x + EMPTY_HINT_SIZE.width / 2,
+    top: p.y - EMPTY_HINT_SIZE.height / 2,
+    bottom: p.y + EMPTY_HINT_SIZE.height / 2,
+  })
+
+  it("avoids both axes on a desktop-size default view", () => {
+    const s = { width: 1056, height: 800 }
+    const l = computeGridLayout(defaultViewport(s), s)
+    const b = box(emptyHintPosition(defaultViewport(s), s))
+    expect(b.bottom).toBeLessThan(l.xAxis!)
+    expect(b.left > l.yAxis! || b.right < l.yAxis! - 40).toBe(true)
+    expect(b.left).toBeGreaterThanOrEqual(0)
+    expect(b.right).toBeLessThanOrEqual(s.width)
+  })
+
+  it("stays above the x-axis and inside the uncovered area on a phone with a sheet", () => {
+    const s = { width: 375, height: 700 }
+    const vp = defaultViewportInset(s, 300)
+    const p = emptyHintPosition(vp, s, 300)
+    const b = box(p)
+    const l = computeGridLayout(vp, s)
+    expect(b.bottom).toBeLessThan(l.xAxis!)
+    expect(b.top).toBeGreaterThanOrEqual(0)
+    expect(b.bottom).toBeLessThanOrEqual(400)
+  })
+
+  it("goes below the axis when that region is larger", () => {
+    const s = { width: 800, height: 600 }
+    const vp = { xMin: -10, xMax: 10, yMin: -13, yMax: 2 } // x-axis 80px from the top
+    const l = computeGridLayout(vp, s)
+    const b = box(emptyHintPosition(vp, s))
+    expect(b.top).toBeGreaterThan(l.xAxis! + LABEL_HEIGHT)
   })
 })

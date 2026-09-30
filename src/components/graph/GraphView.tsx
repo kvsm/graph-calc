@@ -17,13 +17,12 @@ import {
   toScreenY,
   wheelZoomFactor,
   zoomAt,
-  zoomCenter,
   type Size,
   type Vec2,
   type Viewport,
 } from "@/lib/viewport"
 import type { GraphViewProps, PlotItem } from "@/state/types"
-import { readGraphColors } from "./colors"
+import { FALLBACK_COLORS, readGraphColors } from "./colors"
 import { CURVE_WIDTH, drawGraph, TRACED_CURVE_WIDTH } from "./draw"
 import {
   exceedsSlop,
@@ -36,11 +35,11 @@ import {
 import { GraphToolbar } from "./GraphToolbar"
 import { graphKeyAction } from "./keyboard"
 import { graphAriaLabel, traceAnnouncement, truncate, viewAnnouncement } from "./label"
-import { effectiveViewport } from "./layout"
+import { effectiveViewport, emptyHintPosition, shiftBy, usableSize, visibleRect } from "./layout"
 import { createSampleCache } from "./sampleCache"
 import { ShortcutsDialog } from "./ShortcutsDialog"
 import { tooltipPosition } from "./tooltip"
-import { cycleId, findTraceStart, keepInView, nearestCurvePoint, safeEval, stepTraceX } from "./trace"
+import { cycleId, findTraceStart, gridStepTraceX, keepInView, nearestCurvePoint, safeEval } from "./trace"
 
 export const GRAPH_WRAPPER_LABEL = "Graph. Arrow keys pan, plus and minus zoom, T traces."
 export const EMPTY_GRAPH_HINT = "Add an expression to see it graphed."
@@ -81,7 +80,15 @@ const initialDpr = () => (typeof window !== "undefined" && window.devicePixelRat
 const evaluator = (plot: PlotItem, params: Record<string, number>) => (x: number) =>
   plot.expression.evaluate(x, params)
 
-export function GraphView({ plots, params, viewport, onViewportChange, theme, onToggleTheme }: GraphViewProps) {
+export function GraphView({
+  plots,
+  params,
+  viewport,
+  onViewportChange,
+  theme,
+  onToggleTheme,
+  insetBottom = 0,
+}: GraphViewProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const tipRef = useRef<HTMLDivElement>(null)
@@ -99,7 +106,10 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
   }, [])
 
   const hasSize = size.width > 0 && size.height > 0
-  const vp = useMemo(() => effectiveViewport(viewport, size), [viewport, size])
+  const vp = useMemo(() => effectiveViewport(viewport, size, insetBottom), [viewport, size, insetBottom])
+  // The uncovered area (above the phone sheet) and the world rectangle it shows (UX-04).
+  const usable = useMemo(() => usableSize(size, insetBottom), [size, insetBottom])
+  const rect = useMemo(() => visibleRect(vp, size, insetBottom), [vp, size, insetBottom])
   const visible = useMemo(() => plots.filter((p) => p.visible), [plots])
 
   // Re-sample a curve only when its expression, its parameter values, the view or
@@ -173,6 +183,32 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
     return () => mq.removeEventListener?.("change", onChange)
   }, [dpr])
 
+  // ---- Theme colours -------------------------------------------------------------
+  // Read once per theme change, not per frame (CR-16). Read in a rAF because the app
+  // applies the theme class in its own effect, which runs after this child's effects;
+  // also re-read if <html>'s class or style changes some other way.
+  const [colors, setColors] = useState(() => FALLBACK_COLORS[theme])
+  useEffect(() => {
+    const read = () => {
+      const next = readGraphColors(canvasRef.current, theme)
+      setColors((cur) =>
+        cur.bg === next.bg && cur.grid === next.grid && cur.gridMajor === next.gridMajor && cur.axis === next.axis
+          ? cur
+          : next,
+      )
+    }
+    const id = raf(read)
+    let mo: MutationObserver | null = null
+    if (typeof MutationObserver === "function" && typeof document !== "undefined") {
+      mo = new MutationObserver(() => raf(read))
+      mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] })
+    }
+    return () => {
+      cancelRaf(id)
+      mo?.disconnect()
+    }
+  }, [theme])
+
   // ---- Drawing (one rAF per change) --------------------------------------------
   useEffect(() => {
     const canvas = canvasRef.current
@@ -193,8 +229,7 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
         size,
         dpr,
         viewport: vp,
-        // Read at draw time (after the app has applied the theme class).
-        colors: readGraphColors(canvas, theme),
+        colors,
         curves: curves.map((c) => ({
           color: paletteColor(c.colorIndex, theme),
           segments: c.segments,
@@ -204,7 +239,7 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
       })
     })
     return () => cancelRaf(id)
-  }, [curves, vp, size, dpr, theme, traced, hasSize])
+  }, [curves, vp, size, dpr, theme, traced, hasSize, colors])
 
   // ---- Pointer, wheel and touch gestures ----------------------------------------
   useEffect(() => {
@@ -396,19 +431,26 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
   }, [emit])
 
   // ---- View commands (keyboard + toolbar) ---------------------------------------
+  // Zoom about the centre of the uncovered area (UX-04).
   const zoomBy = useCallback(
     (factor: number) => {
-      const next = zoomCenter(vp, factor)
+      const next = zoomAt(vp, size, { x: usable.width / 2, y: usable.height / 2 }, factor)
       if (next === vp) return
       emit(next)
-      announce(viewAnnouncement(factor > 1 ? "zoomIn" : "zoomOut", next))
+      announce(viewAnnouncement(factor > 1 ? "zoomIn" : "zoomOut", visibleRect(next, size, insetBottom)))
     },
-    [vp, emit],
+    [vp, size, usable, insetBottom, emit],
   )
   const resetView = useCallback(() => {
     latest.current.onViewportChange(null)
     announce(viewAnnouncement("reset", vp))
   }, [vp])
+
+  /** Pan so that world point `pt` is inside the uncovered area. */
+  const keepVisible = (pt: Vec2) => {
+    const next = shiftBy(vp, rect, keepInView(rect, pt))
+    if (next !== vp) emit(next)
+  }
 
   const keyboardTracing = traced !== null && traced.source === "keyboard"
 
@@ -419,9 +461,10 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
     e.preventDefault()
     switch (action.type) {
       case "pan": {
-        const next = panByFraction(vp, action.fx, action.fy)
-        emit(next)
-        announce(viewAnnouncement(action.direction, next))
+        // Fractions of the uncovered area's span.
+        const moved = panByFraction(rect, action.fx, action.fy)
+        emit(shiftBy(vp, rect, moved))
+        announce(viewAnnouncement(action.direction, moved))
         return
       }
       case "zoom":
@@ -446,9 +489,10 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
         // First visible curve with anything to trace in the visible x-range (normally visible[0]).
         for (const plot of hasSize ? visible : []) {
           const f = evaluator(plot, params)
-          const start = findTraceStart(f, vp, size)
+          const start = findTraceStart(f, rect, usable)
           if (!start) continue
-          if (start.viewport !== vp) emit(start.viewport)
+          const next = shiftBy(vp, rect, start.viewport)
+          if (next !== vp) emit(next)
           setTrace({ id: plot.id, x: start.x, source: "keyboard" })
           announce(traceAnnouncement(plot.label, start.x, safeEval(f, start.x)))
           return
@@ -458,10 +502,10 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
       }
       case "traceStep": {
         if (!traced) return
-        const x = stepTraceX(traced.x, vp, size, action.pixels)
+        // One minor grid step (Shift: one major step), snapped to the grid (UX-17).
+        const x = gridStepTraceX(traced.x, vp, size, action.dir, action.major)
         const y = safeEval(evaluator(traced.plot, params), x)
-        const next = keepInView(vp, { x, y })
-        if (next !== vp) emit(next)
+        keepVisible({ x, y })
         setTrace({ id: traced.plot.id, x, source: "keyboard" })
         announce(traceAnnouncement(traced.plot.label, x, y))
         return
@@ -474,8 +518,7 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
         if (index < 0) return
         const plot = visible[index]
         const y = safeEval(evaluator(plot, params), traced.x)
-        const next = keepInView(vp, { x: traced.x, y })
-        if (next !== vp) emit(next)
+        keepVisible({ x: traced.x, y })
         setTrace({ id: plot.id, x: traced.x, source: "keyboard" })
         announce(traceAnnouncement(plot.label, traced.x, y, { index, count: ids.length }))
         return
@@ -483,25 +526,33 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
     }
   }
 
+  // Keyboard/touch trace ends when focus leaves the graph (UX-12). Opening the
+  // shortcuts dialog counts as leaving; T restarts the trace.
+  const onBlur = () => {
+    if (trace && trace.source !== "hover") setTrace(null)
+  }
+
   // ---- Trace tooltip placement ----------------------------------------------------
   const anchor: Vec2 | null =
     traced && hasSize
       ? {
           x: toScreenX(vp, size, traced.x),
-          y: Number.isFinite(traced.y) ? toScreenY(vp, size, traced.y) : size.height / 2,
+          y: Number.isFinite(traced.y) ? toScreenY(vp, size, traced.y) : usable.height / 2,
         }
       : null
   const anchorInside =
-    anchor !== null && anchor.x >= 0 && anchor.x <= size.width && anchor.y >= 0 && anchor.y <= size.height
+    anchor !== null && anchor.x >= 0 && anchor.x <= usable.width && anchor.y >= 0 && anchor.y <= usable.height
   useLayoutEffect(() => {
     const el = tipRef.current
     if (!el || !anchor) return
-    const pos = tooltipPosition(anchor, { width: el.offsetWidth, height: el.offsetHeight }, size)
+    // Flip within the uncovered area (UX-04).
+    const pos = tooltipPosition(anchor, { width: el.offsetWidth, height: el.offsetHeight }, usable)
     el.style.left = `${pos.left}px`
     el.style.top = `${pos.top}px`
   })
 
-  const ariaLabel = useMemo(() => graphAriaLabel(visible.map((p) => p.label), vp), [visible, vp])
+  const ariaLabel = useMemo(() => graphAriaLabel(visible.map((p) => p.label), rect), [visible, rect])
+  const hintAt = plots.length === 0 && hasSize ? emptyHintPosition(vp, size, insetBottom) : null
 
   return (
     <div className="relative size-full overflow-hidden" data-slot="graph">
@@ -516,6 +567,7 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
         aria-label={GRAPH_WRAPPER_LABEL}
         aria-describedby={LIVE_REGION_ID}
         onKeyDown={onKeyDown}
+        onBlur={onBlur}
         className="absolute inset-0 outline-hidden focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring"
       >
         <canvas
@@ -530,25 +582,29 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
             ref={tipRef}
             aria-hidden="true"
             data-testid="trace-tooltip"
-            className="pointer-events-none absolute z-10 rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground shadow-md"
+            className="pointer-events-none absolute z-10 rounded-md border bg-popover px-2 py-1 whitespace-nowrap text-popover-foreground shadow-md"
             style={{ left: anchor.x + 12, top: anchor.y - 12 }}
           >
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span
                 className="inline-block size-2 shrink-0 rounded-full"
                 style={{ backgroundColor: paletteColor(traced.plot.colorIndex, theme) }}
               />
               <span>{truncate(traced.plot.label)}</span>
             </div>
-            <div className="font-mono tabular-nums">{formatPoint(traced.x, traced.y)}</div>
+            <div className="font-mono text-sm font-medium tabular-nums">{formatPoint(traced.x, traced.y)}</div>
           </div>
         )}
-        {plots.length === 0 && (
-          <p className="pointer-events-none absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
-            {EMPTY_GRAPH_HINT}
-          </p>
-        )}
       </div>
+      {hintAt && (
+        <p
+          data-testid="empty-graph-hint"
+          className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border bg-background px-3 py-1 text-sm whitespace-nowrap text-muted-foreground shadow-sm"
+          style={{ left: hintAt.x, top: hintAt.y }}
+        >
+          {EMPTY_GRAPH_HINT}
+        </p>
+      )}
       <GraphToolbar
         canZoomIn={canZoom(vp, 2)}
         canZoomOut={canZoom(vp, 0.5)}
