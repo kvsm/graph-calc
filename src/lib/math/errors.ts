@@ -11,6 +11,7 @@ export type ExpressionErrorCode =
   | 'missing-parens'
   | 'unsupported-syntax'
   | 'uses-y'
+  | 'self-reference'
   | 'syntax'
 
 export interface ExpressionError {

@@ -201,7 +201,6 @@ describe('parseExpression: error messages (UX-SPEC §3.1)', () => {
     ['[1, 2]', '['],
     ['2..3', '.3'],
     ['2 3', '3'],
-    ['sin x', 'sin'],
     ['y = x = 2', '='],
     ['x mod 2', 'mod'],
     ['true', 'true'],
@@ -276,4 +275,163 @@ describe('parseExpression: security', () => {
     }
   })
 
+})
+
+describe('parseExpression: bracket-free functions (sinx)', () => {
+  // Rule: inside one identifier, a known function name takes the rest of the identifier
+  // (up to the next function name) as its argument. Longest function name wins.
+  it.each([
+    ['sinx', 1, Math.sin(1)],
+    ['cosx', 1, Math.cos(1)],
+    ['tanx', 1, Math.tan(1)],
+    ['lnx', 2, Math.log(2)],
+    ['logx', 100, 2],
+    ['sqrtx', 9, 3],
+    ['expx', 1, Math.E],
+    ['absx', -3, 3],
+    ['sin2x', 1, Math.sin(2)],
+    ['sinpix', 0.5, 1],
+    ['xsinx', 2, 2 * Math.sin(2)],
+    ['sinxcosx', 1, Math.sin(1) * Math.cos(1)],
+    ['2sinx', 1, 2 * Math.sin(1)],
+    ['sinhx', 1, Math.sinh(1)],
+    ['asinx', 1, Math.PI / 2],
+    ['log2x', 8, 3],
+    ['sinx + 1', 0, 1],
+    ['sinx/2', Math.PI / 2, 0.5],
+  ])('%s at x=%d', (input, x, expected) => {
+    const e = ok(input)
+    expect(e.parameters).toEqual([])
+    expect(e.evaluate(x)).toBeCloseTo(expected, 12)
+  })
+
+  it('takes parameters inside the argument', () => {
+    const e = ok('sinax')
+    expect(e.parameters).toEqual(['a'])
+    expect(e.evaluate(1, { a: Math.PI / 2 })).toBeCloseTo(1, 12)
+  })
+
+  it('still splits plain letter products', () => {
+    expect(ok('si').parameters).toEqual(['i', 's'])
+    expect(ok('ab').parameters).toEqual(['a', 'b'])
+    expect(ok('ae').parameters).toEqual(['a'])
+    expect(ok('ex').evaluate(2)).toBeCloseTo(2 * Math.E, 12)
+  })
+
+  it.each([
+    ['sin x', 'Add brackets: sin(x).'],
+    ['3 sin x', 'Add brackets: sin(x).'],
+    ['sin', 'Add brackets: sin(x).'],
+    ['xsin', 'Add brackets: sin(x).'],
+    ['sinx^2', 'Add brackets: sin(x)^2 or sin(x^2).'],
+    ['sin2x^2', 'Add brackets: sin(2x)^2 or sin(2x^2).'],
+    ['sin^2', 'Add brackets: sin(x)^2.'],
+  ])('%s asks for brackets', (input, message) => {
+    const e = err(input)
+    expect(e.code).toBe('missing-parens')
+    expect(e.message).toBe(message)
+  })
+
+  it('reports junk inside a bracket-free argument', () => {
+    expect(err('sinx2y').message).toBe('Couldn\'t understand this expression. Check for typos near "sinx2y".')
+  })
+})
+
+describe('parseExpression: left-hand side rules', () => {
+  it('never turns the function name into a parameter', () => {
+    const e = ok('f(x) = a x')
+    expect(e.parameters).toEqual(['a'])
+  })
+
+  it.each([
+    ['f(x) = y', "y can't appear on the right-hand side."],
+    ['f(x) = f(x)', "f can't appear on the right-hand side."],
+    ['f(x) = 2f', "f can't appear on the right-hand side."],
+    ['g(x) = x + g', "g can't appear on the right-hand side."],
+    ['y', "y can't appear on the right-hand side."],
+    ['g(y) = y', "Couldn't understand this expression. Check for typos near \"y\"."],
+  ])('%s', (input, message) => {
+    expect(err(input).message).toBe(message)
+  })
+
+  it.each(['e = 3', 'pi = 3', 'tau = 1'])('%s explains that the name is a constant', (input) => {
+    const name = input.split(' ')[0]
+    expect(err(input).message).toBe(`${name} is a constant, so it can't be changed. Only y = … is supported.`)
+  })
+
+  it.each(['a = -5', 'a = 2.5', 'a = 1e3'])('%s gets the slider hint', (input) => {
+    expect(err(input).message).toBe(
+      'Only y = … is supported. To make a slider, just use a in an expression, e.g. a·sin(x).',
+    )
+  })
+
+  it('Y = x is not y (case-sensitive)', () => {
+    expect(err('Y = x').message).toBe('Only y = … is supported. Write it as y = … or just the expression.')
+  })
+
+  it('accepts x = y as the mirrored form of y = x', () => {
+    expect(ok('x = y').evaluate(3)).toBe(3)
+  })
+
+  it.each(['y=', 'y = ', 'f(x) ='])('%s is empty-rhs', (input) => {
+    expect(err(input).code).toBe('empty-rhs')
+  })
+})
+
+describe('parseExpression: precedence (pinned against mathjs changes)', () => {
+  it.each([
+    ['2x^2', 3, 18], // 2·(x²)
+    ['1/2x', 3, 1.5], // (1/2)·x, mathjs implicit-multiplication precedence
+    ['-2^2', 0, -4], // -(2²)
+    ['x^-1', 4, 0.25],
+    ['2^x^2', 2, 16], // right-associative
+    ['sin (x)', Math.PI / 2, 1],
+    ['a x', 2, 6],
+    ['2e', 0, 2 * Math.E],
+    ['2e3', 0, 2000],
+    ['1e-3x', 2, 0.002],
+  ])('%s at x=%d is %d', (input, x, expected) => {
+    expect(at(input, x, { a: 3 })).toBeCloseTo(expected, 12)
+  })
+
+  it('x^(1/3) is a gap for negative x (use cbrt)', () => {
+    expect(at('x^(1/3)', -8)).toBeNaN()
+  })
+})
+
+describe('parseExpression: more §3.1 wording', () => {
+  it.each(['2 -', '2 *', '2 /', '2 ^', 'x^', 'sin(x) +'])('%s ends unexpectedly', (input) => {
+    const op = input.trim().slice(-1)
+    expect(err(input).message).toBe(`Expression ends unexpectedly after ${op}.`)
+  })
+
+  it.each([
+    ['sin()', 'sin needs a value, e.g. sin(x).'],
+    ['log()', 'log needs a value, e.g. log(x).'],
+    ['ln(x, 2)', 'ln needs 1 value.'],
+    ['sin(x, 2)', 'sin needs 1 value.'],
+  ])('%s', (input, message) => {
+    expect(err(input).message).toBe(message)
+  })
+
+  it.each([
+    [')(', 'Unexpected ) — there are more closing brackets than opening ones.', 0],
+    ['(x))', 'Unexpected ) — there are more closing brackets than opening ones.', 3],
+    ['((x)', 'Missing closing bracket ).', 0],
+    ['abs(x', 'Missing closing bracket ).', 3],
+  ])('%s', (input, message, position) => {
+    const e = err(input)
+    expect(e.message).toBe(message)
+    expect(e.position).toBe(position)
+  })
+
+  it('handles stress inputs quickly without throwing', () => {
+    const nested = '('.repeat(2000) + 'x' + ')'.repeat(2000)
+    const long = Array.from({ length: 5000 }, () => 'x').join('+')
+    for (const input of [nested, long]) {
+      const t0 = performance.now()
+      expect(() => parseExpression(input)).not.toThrow()
+      expect(performance.now() - t0).toBeLessThan(250)
+    }
+  })
 })

@@ -1,5 +1,6 @@
 import { compileAst, type Params } from './compile'
 import { ExpressionSyntaxError, fallbackMessage, type ExpressionError } from './errors'
+import { isKnownConstant } from './functions'
 import { parseToAst } from './mathjs'
 
 export type ExpressionForm =
@@ -102,6 +103,13 @@ function classifyLhs(lhs: string, rhs: string, position: number): Lhs | ParseRes
     if (match[2] !== 'x') return fail('invalid-lhs', fallbackMessage(match[2] || lhs), position)
     return { form: 'function', name: match[1] }
   }
+  if (isKnownConstant(lhs)) {
+    return fail(
+      'invalid-lhs',
+      `${lhs} is a constant, so it can't be changed. Only y = … is supported.`,
+      position,
+    )
+  }
   if (SINGLE_LETTER.test(lhs) && lhs !== 'x' && NUMBER_LITERAL.test(rhs.replace(/\s/g, ''))) {
     // Looks like an attempt to define a parameter, e.g. "a = 5".
     return fail(
@@ -179,7 +187,9 @@ function parseUnsafe(input: string): ParseResult {
     let lhsOffset = 0
 
     // Accept the mirrored form "… = y".
-    if (normalise(rhsRaw) === 'y' && normalise(lhsRaw) !== 'y') {
+    // Not for function forms: "f(x) = y" is an error, not "y = f·x".
+    const lhsNorm = normalise(lhsRaw)
+    if (normalise(rhsRaw) === 'y' && lhsNorm !== 'y' && !LHS_FUNCTION.test(lhsNorm)) {
       ;[lhsRaw, rhsRaw] = [rhsRaw, lhsRaw]
       ;[lhsOffset, rhsOffset] = [rhsOffset, lhsOffset]
     }
@@ -210,7 +220,7 @@ function parseUnsafe(input: string): ParseResult {
     return friendlyParseError(err, body, rhsOffset + leading)
   }
 
-  const { fn, parameters } = compileAst(ast)
+  const { fn, parameters } = compileAst(ast, { reserved: name === undefined ? [] : [name] })
 
   const evaluate = (x: number, params: Params = NO_PARAMS): number => {
     const y = fn(x, params)

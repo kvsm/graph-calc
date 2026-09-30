@@ -54,6 +54,42 @@ export function splitIdentifier(name: string): string[] | null {
   return parts
 }
 
+/** Function names, longest first, so "sinhx" is sinh(x) and "atanx" is atan(x). */
+const FUNCTION_NAMES = Object.keys(FUNCTIONS).sort((a, b) => b.length - a.length)
+
+export type IdentifierSegment = { kind: 'plain'; text: string } | { kind: 'fn'; name: string }
+
+/**
+ * Split an identifier at known function names, e.g. "xsinx" -> [x][sin][x],
+ * "sinxcosx" -> [sin][x][cos][x]. At each position the longest function name wins.
+ */
+export function segmentIdentifier(name: string): IdentifierSegment[] {
+  const segments: IdentifierSegment[] = []
+  let plain = ''
+  let i = 0
+  while (i < name.length) {
+    const fn = FUNCTION_NAMES.find((f) => name.startsWith(f, i))
+    if (fn) {
+      if (plain) segments.push({ kind: 'plain', text: plain })
+      plain = ''
+      segments.push({ kind: 'fn', name: fn })
+      i += fn.length
+    } else {
+      plain += name[i]
+      i += 1
+    }
+  }
+  if (plain) segments.push({ kind: 'plain', text: plain })
+  return segments
+}
+
+const addBrackets = (fn: string, arg = 'x') => `Add brackets: ${fn}(${arg}).`
+
+export interface CompileOptions {
+  /** Extra names that may not appear (e.g. "f" in "f(x) = …"). */
+  reserved?: readonly string[]
+}
+
 /** True for a single letter or a named constant. */
 function isAtomicSymbol(name: string): boolean {
   const parts = splitIdentifier(name)
@@ -67,8 +103,9 @@ function arityMessage(name: string, min: number, max: number): string {
   return `${name} needs ${min} or ${max} values.`
 }
 
-export function compileAst(root: MathNode): CompiledAst {
+export function compileAst(root: MathNode, options: CompileOptions = {}): CompiledAst {
   const seen = new Set<string>()
+  const reserved = new Set(options.reserved ?? [])
 
   const product = (factors: Evaluator[]): Evaluator => {
     if (factors.length === 1) return factors[0]
@@ -84,17 +121,89 @@ export function compileAst(root: MathNode): CompiledAst {
     if (RESERVED_SYMBOLS.has(name)) {
       throw new ExpressionSyntaxError('uses-y', "y can't appear on the right-hand side.")
     }
+    if (reserved.has(name)) {
+      throw new ExpressionSyntaxError('self-reference', `${name} can't appear on the right-hand side.`)
+    }
     if (isKnownFunction(name)) {
       // e.g. "sin x": a function used without brackets.
-      throw new ExpressionSyntaxError('missing-parens', fallbackMessage(name))
+      throw new ExpressionSyntaxError('missing-parens', addBrackets(name))
     }
     if (isAtomicSymbol(name)) {
       seen.add(name)
       return (_x, params) => params[name] ?? NaN
     }
+    const segments = segmentIdentifier(name)
+    if (segments.some((s) => s.kind === 'fn')) return bracketFree(name, segments)
     const parts = splitIdentifier(name)
     if (!parts) throw new ExpressionSyntaxError('syntax', fallbackMessage(name))
     return product(parts.map(symbol))
+  }
+
+  /** A run like "2ax" as factors: optional number, then letters/constants. */
+  const plainFactors = (text: string, whole: string): Evaluator[] => {
+    const m = /^(\d+(?:\.\d+)?)?(.*)$/.exec(text)
+    const factors: Evaluator[] = []
+    if (m?.[1]) {
+      const value = Number(m[1])
+      factors.push(() => value)
+    }
+    const letters = m?.[2] ?? text
+    if (letters) {
+      const parts = splitIdentifier(letters)
+      if (!parts) throw new ExpressionSyntaxError('syntax', fallbackMessage(whole))
+      factors.push(...parts.map(symbol))
+    }
+    return factors
+  }
+
+  /**
+   * Bracket-free function application inside one identifier: each function takes
+   * the rest of the identifier, up to the next function name, as its argument.
+   * "sinx" -> sin(x), "sin2x" -> sin(2x), "xsinx" -> x·sin(x), "sinxcosx" -> sin(x)·cos(x).
+   */
+  const bracketFree = (whole: string, segments: IdentifierSegment[]): Evaluator => {
+    const factors: Evaluator[] = []
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]
+      if (seg.kind === 'plain') {
+        factors.push(...plainFactors(seg.text, whole))
+        continue
+      }
+      const next = segments[i + 1]
+      if (!next || next.kind !== 'plain') {
+        throw new ExpressionSyntaxError('missing-parens', addBrackets(seg.name))
+      }
+      factors.push(callFunction(seg.name, [product(plainFactors(next.text, whole))]))
+      i += 1
+    }
+    return product(factors)
+  }
+
+  /** "sinx^2" could mean sin(x)^2 or sin(x^2), and "sin^2" lacks brackets: ask for brackets. */
+  const rejectAmbiguousPower = (base: MathNode, exponent: MathNode) => {
+    if (base.type !== 'SymbolNode') return
+    const name = (base as unknown as { name: string }).name
+    const simpleExp = exponent.type === 'ConstantNode' || exponent.type === 'SymbolNode'
+    const exp = simpleExp ? exponent.toString() : null
+    if (isKnownFunction(name)) {
+      throw new ExpressionSyntaxError(
+        'missing-parens',
+        exp ? `Add brackets: ${name}(x)^${exp}.` : addBrackets(name),
+      )
+    }
+    if (isAtomicSymbol(name)) return
+    const segments = segmentIdentifier(name)
+    const at = segments.findIndex((s) => s.kind === 'fn')
+    if (at === -1) return
+    const fnName = (segments[at] as { name: string }).name
+    const next = segments[at + 1]
+    const arg = next?.kind === 'plain' ? next.text : 'x'
+    throw new ExpressionSyntaxError(
+      'missing-parens',
+      exp
+        ? `Add brackets: ${fnName}(${arg})^${exp} or ${fnName}(${arg}^${exp}).`
+        : addBrackets(fnName, arg),
+    )
   }
 
   const callFunction = (name: string, args: Evaluator[]): Evaluator => {
@@ -140,6 +249,7 @@ export function compileAst(root: MathNode): CompiledAst {
           return (x, p) => -a(x, p)
         }
         if (fn === 'unaryPlus' && args.length === 1) return visit(args[0])
+        if (fn === 'pow' && args.length === 2) rejectAmbiguousPower(args[0], args[1])
         const binary = BINARY_OPS[fn]
         if (binary && args.length === 2) {
           const a = visit(args[0])
