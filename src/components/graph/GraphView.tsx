@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { announce, LIVE_REGION_ID } from "@/lib/announce"
-import { sampleFunction, type Segment } from "@/lib/math"
+import type { Segment } from "@/lib/math"
 import { paletteColor } from "@/lib/palette"
 import {
   canZoom,
@@ -39,6 +39,7 @@ import { GraphToolbar } from "./GraphToolbar"
 import { graphKeyAction } from "./keyboard"
 import { graphAriaLabel, traceAnnouncement, truncate, viewAnnouncement } from "./label"
 import { effectiveViewport } from "./layout"
+import { createSampleCache } from "./sampleCache"
 import { ShortcutsDialog } from "./ShortcutsDialog"
 import { tooltipPosition } from "./tooltip"
 import { cycleId, findDefinedX, keepInView, nearestCurvePoint, safeEval, stepTraceX } from "./trace"
@@ -103,22 +104,20 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
   const vp = useMemo(() => effectiveViewport(viewport, size), [viewport, size])
   const visible = useMemo(() => plots.filter((p) => p.visible), [plots])
 
-  // Re-sample only when plots, parameters or the view change (not on trace/hover).
+  // Re-sample a curve only when its expression, its parameter values, the view or
+  // the size change. `plots` is a new array on every keystroke, so cache per plot id.
+  const sampleCache = useMemo(() => createSampleCache(), [])
   const curves = useMemo<SampledCurve[]>(() => {
     if (!hasSize) return []
-    return visible.map((p) => ({
-      id: p.id,
-      colorIndex: p.colorIndex,
-      segments: sampleFunction(evaluator(p, params), {
-        xMin: vp.xMin,
-        xMax: vp.xMax,
-        yMin: vp.yMin,
-        yMax: vp.yMax,
-        pixelWidth: size.width,
-        pixelHeight: size.height,
-      }),
-    }))
-  }, [visible, params, vp, size, hasSize])
+    sampleCache.prune(visible.map((p) => p.id))
+    return sampleCache.stabilize(
+      visible.map((p) => ({
+        id: p.id,
+        colorIndex: p.colorIndex,
+        segments: sampleCache.get(p.id, p.expression, params, vp, size),
+      })),
+    )
+  }, [sampleCache, visible, params, vp, size, hasSize])
 
   // The traced point, re-evaluated so it follows slider changes.
   const traced = useMemo(() => {

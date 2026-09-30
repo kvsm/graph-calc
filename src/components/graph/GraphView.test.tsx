@@ -323,3 +323,57 @@ describe("GraphView pointer", () => {
     }
   })
 })
+
+describe("GraphView sampling", () => {
+  function counted(text: string) {
+    const r = parseExpression(text)
+    if (!r.ok) throw new Error(text)
+    const evaluate = vi.fn(r.expression.evaluate)
+    return { expression: { ...r.expression, evaluate }, evaluate }
+  }
+  const props = (plots: PlotItem[], params: Record<string, number> = {}) => ({
+    plots,
+    params,
+    viewport: null,
+    onViewportChange: () => {},
+    theme: "light" as const,
+    onToggleTheme: () => {},
+  })
+
+  it("does not re-sample when plots is a new array with unchanged curves", () => {
+    const a = counted("y = x^2")
+    const make = (extra: Partial<PlotItem> = {}): PlotItem => ({
+      id: "a",
+      label: "y = x^2",
+      colorIndex: 0,
+      visible: true,
+      expression: a.expression,
+      ...extra,
+    })
+    const { rerender } = render(<GraphView {...props([make()], { k: 1 })} />)
+    const after = a.evaluate.mock.calls.length
+    expect(after).toBeGreaterThan(0)
+    // New arrays / objects every keystroke, including a new params object with an unrelated change.
+    rerender(<GraphView {...props([make()], { k: 2 })} />)
+    rerender(<GraphView {...props([make(), make({ id: "hidden", visible: false })], { k: 3 })} />)
+    // Colour change repaints without sampling.
+    rerender(<GraphView {...props([make({ colorIndex: 3 })], { k: 3 })} />)
+    expect(a.evaluate.mock.calls.length).toBe(after)
+
+    // A new expression object re-samples.
+    const b = counted("y = x^2")
+    rerender(<GraphView {...props([make({ expression: b.expression })])} />)
+    expect(b.evaluate.mock.calls.length).toBeGreaterThan(0)
+  })
+
+  it("re-samples when a parameter the curve uses changes", () => {
+    const a = counted("y = a*x")
+    const p: PlotItem = { id: "a", label: "y = a*x", colorIndex: 0, visible: true, expression: a.expression }
+    const { rerender } = render(<GraphView {...props([p], { a: 1 })} />)
+    const after = a.evaluate.mock.calls.length
+    rerender(<GraphView {...props([{ ...p }], { a: 1 })} />)
+    expect(a.evaluate.mock.calls.length).toBe(after)
+    rerender(<GraphView {...props([{ ...p }], { a: 2 })} />)
+    expect(a.evaluate.mock.calls.length).toBeGreaterThan(after)
+  })
+})
