@@ -112,7 +112,7 @@ Hover state on the whole row: `hover:bg-muted/50`. The row containing focus: `fo
 | Backspace on empty | Deletes the row and focuses the **end** of the previous input. Ignored on the only row. |
 | Arrow Up / Down | Move focus to the previous / next expression input (caret to end). |
 | Escape | Blurs the input (focus moves to its row's swatch toggle). |
-| Accepted forms | `y = f(x)`, bare `f(x)`, and `f(x) = ...` is NOT supported (error). Whitespace ignored. `^` for powers, `pi`/`π`, `e`, `sqrt`, `abs`, `exp`, `ln` (= natural log), `log` (= base 10), `log(x, b)`, trig + inverse (`asin`/`arcsin` both work). |
+| Accepted forms | `y = f(x)`, bare `f(x)`, and `f(x) = ...` (accepted, per team-lead decision; overrides earlier draft). Whitespace ignored. `^` for powers, `pi`/`π`, `e`, `sqrt`, `abs`, `exp`, `ln` (= natural log), `log` (= base 10), `log(x, b)`, trig + inverse (`asin`/`arcsin` both work). |
 | Implicit multiplication | **Yes**: `2x`, `3sin(x)`, `2pi`, `x(x+1)`, `(x+1)(x-1)`. `ax` is parsed as `a*x` when `a` is a parameter (single-letter variables; multi-letter tokens are functions/constants only). |
 | Constant `y = 3` | Valid: horizontal line. |
 
