@@ -1,0 +1,7 @@
+export { parseExpression } from './parseExpression'
+export type { CompiledExpression, ExpressionForm, ParseResult } from './parseExpression'
+export type { ExpressionError, ExpressionErrorCode } from './errors'
+export type { Params } from './compile'
+export { sampleFunction } from './sample'
+export type { Point, Segment, SampleOptions } from './sample'
+export { CONSTANTS, FUNCTIONS, isKnownConstant, isKnownFunction } from './functions'
