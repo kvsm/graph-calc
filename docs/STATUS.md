@@ -55,3 +55,10 @@
 2. Complete the outstanding items above.
 3. Verify: `npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e`.
 4. Final UX screenshot pass at 1440/800/375/320 in light and dark against UX-SPEC §13.
+
+## tester wind-up report
+- Part C e2e tests are committed in 6b3b806 and compile cleanly. They cover CR-01–07, CR-14, CR-20, UX-01, UX-05, UX-17, UX-22 and 4a.
+- These tests are written against the fixed behaviour, so many will fail until the fixes above land.
+- In the last run, 5 of the older specs also failed and haven't been triaged: trace step, persistence round-trip,
+  panel collapse, sheet toggle, theme persistence.
+- Not covered: a deterministic error-boundary trigger (needs a test hook), and how the focus ring and hint look.
