@@ -98,6 +98,7 @@ test.describe('#17 slider creation and live updates', () => {
 
   test('sliders are listed alphabetically, and x, y, e never become sliders', async ({ page }) => {
     await setExpression(page, 2, 'y = b*x + a + e^x')
+    await expect(slider(page, 'b')).toBeVisible()
     const names = await page
       .getByRole('slider')
       .evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? e.textContent))

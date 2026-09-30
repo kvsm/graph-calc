@@ -98,6 +98,18 @@ export async function setExpression(page: Page, n: number, text: string, { commi
   if (commit) await input.blur()
 }
 
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * Wait until the graph has picked up an expression (after the 150ms debounce): the canvas
+ * aria-label lists visible expressions. Pass `present: false` to wait for it to disappear.
+ */
+export async function waitForPlot(page: Page, text: string, { present = true } = {}) {
+  const re = new RegExp(`[:,] ${escapeRe(text)}[,.]`)
+  if (present) await expect(canvas(page)).toHaveAttribute('aria-label', re)
+  else await expect(canvas(page)).not.toHaveAttribute('aria-label', re)
+}
+
 export async function openMenu(page: Page, n: number) {
   await overflow(page, n).click()
   const menu = page.getByRole('menu')

@@ -117,11 +117,18 @@ test.describe('#32 visible focus', () => {
       const info = await page.evaluate(() => {
         const el = document.activeElement as HTMLElement | null
         if (!el || el === document.body) return null
-        const s = getComputedStyle(el)
-        const outline = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0
-        const ring = s.boxShadow !== 'none' && s.boxShadow !== ''
+        // The indicator may be drawn on the element or on a descendant (e.g. a slider thumb's inner dot).
+        const shows = (node: Element) => {
+          const s = getComputedStyle(node)
+          const outline = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0
+          // Tailwind stacks transparent zero-size shadows; ignore those and look for a real one.
+          const shadows = s.boxShadow === 'none' ? [] : s.boxShadow.split(/,(?![^(]*\))/)
+          const ring = shadows.some((sh) => !/rgba\(0, 0, 0, 0\)/.test(sh) && /[1-9]\d*(\.\d+)?px/.test(sh))
+          return outline || ring
+        }
+        const visible = shows(el) || Array.from(el.querySelectorAll('*')).some(shows)
         const name = el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30) ?? ''
-        return { key: `${el.tagName.toLowerCase()} "${name}"`, visible: outline || ring }
+        return { key: `${el.tagName.toLowerCase()} "${name}"`, visible }
       })
       if (!info) continue
       if (seen.has(info.key)) continue
@@ -181,6 +188,7 @@ test.describe('#33 target sizes', () => {
       await openApp(page)
       expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), 'coarse pointer emulated').toBe(true)
       await setExpression(page, 2, 'y = a*x')
+      await expect(page.getByRole('button', { name: 'Animate a', exact: true })).toBeVisible()
       const selector = [
         '[role="toolbar"][aria-label="Graph controls"] button',
         'button[aria-label^="Show expression "]',

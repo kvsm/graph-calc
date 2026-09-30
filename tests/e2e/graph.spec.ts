@@ -23,6 +23,7 @@ import {
   toolbar,
   toolbarButton,
   traceCoords,
+  waitForPlot,
   worldToCanvas,
   worldToPage,
   type Viewport,
@@ -112,7 +113,7 @@ test.describe('#23 toolbar', () => {
     await toolbarButton(page, 'Keyboard shortcuts').click()
     const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
     await expect(dialog).toBeVisible()
-    await expect(dialog).toContainText(/trace/i)
+    await expect(dialog).toContainText(/tracing/i)
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(toolbarButton(page, 'Keyboard shortcuts')).toBeFocused()
@@ -323,6 +324,7 @@ test.describe('#24 keyboard on the focused canvas', () => {
 
   test('] / [ and ↑ / ↓ switch curves (wrapping) and keep x', async ({ page }) => {
     await setExpression(page, 2, 'y = x^2 + 1')
+    await waitForPlot(page, 'y = x^2 + 1')
     await focusGraph(page)
     await page.keyboard.press('t')
     const main = page.getByRole('main')
@@ -346,7 +348,9 @@ test.describe('#24 keyboard on the focused canvas', () => {
 
   test('hidden curves are skipped when tracing', async ({ page }) => {
     await setExpression(page, 2, 'y = x^2 + 1')
+    await waitForPlot(page, 'y = x^2 + 1')
     await page.getByRole('button', { name: 'Show expression 1', exact: true }).click()
+    await waitForPlot(page, 'y = sin(x)', { present: false })
     await focusGraph(page)
     await page.keyboard.press('t')
     await expect(page.getByRole('main').getByText('y = x^2 + 1', { exact: true })).toBeVisible()
@@ -383,6 +387,7 @@ test.describe('#26 trace tooltip', () => {
 
   test('whole numbers are shown without trailing zeros, e.g. y = 1 traces as "1"', async ({ page }) => {
     await setExpression(page, 1, 'y = 1')
+    await waitForPlot(page, 'y = 1')
     await focusGraph(page)
     await page.keyboard.press('t')
     const c = parseCoords((await traceCoords(page).textContent()) ?? '')
@@ -397,6 +402,13 @@ test.describe('#26 trace tooltip', () => {
   for (const [expr, y] of sci) {
     test(`uses scientific notation for ${expr}`, async ({ page }) => {
       await setExpression(page, 1, expr)
+      await waitForPlot(page, expr)
+      await focusGraph(page)
+      // Off-screen at the default view: zoom out to the 1e6 span limit, then pan up (50% per press) to y ≈ 2e6.
+      if (expr === 'y = 2000000') {
+        for (let i = 0; i < 20; i++) await page.keyboard.press('-')
+        for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowUp')
+      }
       await focusGraph(page)
       await page.keyboard.press('t')
       await expect(traceCoords(page)).toBeVisible()
@@ -407,6 +419,7 @@ test.describe('#26 trace tooltip', () => {
   test('long expressions are truncated to 24 characters with …', async ({ page }) => {
     const long = 'y = sin(x) + 0*x + 0*x + 0*x + 0*x'
     await setExpression(page, 1, long)
+    await waitForPlot(page, long)
     await focusGraph(page)
     await page.keyboard.press('t')
     await expect(page.getByRole('main').getByText(/^y = sin\(x\).*…$/)).toBeVisible()
@@ -436,6 +449,7 @@ test.describe('#25 no vertical lines at asymptotes', () => {
 
   test('tan(x)', async ({ page }) => {
     await setExpression(page, 1, 'y = tan(x)')
+    await waitForPlot(page, 'y = tan(x)')
     await page.waitForTimeout(400)
     await expect.poll(() => countColourPixels(page, BLUE)).toBeGreaterThan(100)
     const vp = await readViewport(page)
@@ -451,6 +465,7 @@ test.describe('#25 no vertical lines at asymptotes', () => {
 
   test('1/x', async ({ page }) => {
     await setExpression(page, 1, 'y = 1/x')
+    await waitForPlot(page, 'y = 1/x')
     await page.waitForTimeout(400)
     await expect.poll(() => countColourPixels(page, BLUE)).toBeGreaterThan(100)
     const vp = await readViewport(page)

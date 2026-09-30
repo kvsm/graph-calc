@@ -73,11 +73,12 @@ test.describe('#3 collapsing the panel (desktop)', () => {
     await page.getByRole('button', { name: 'Hide expressions panel', exact: true }).click()
     const show = page.getByRole('button', { name: 'Show expressions panel', exact: true })
     await expect(show).toBeVisible()
-    await expect(exprInput(page, 1)).toBeHidden()
-    const width = await page.evaluate(
-      () => document.querySelector('aside')?.getBoundingClientRect().width ?? 0,
-    )
-    expect(width).toBeLessThanOrEqual(1)
+    // Clipped by the zero-width panel (Playwright still counts clipped elements as "visible").
+    await expect(exprInput(page, 1)).not.toBeInViewport()
+    await expect(page.locator('aside')).toHaveAttribute('inert', '')
+    await expect
+      .poll(() => page.evaluate(() => document.querySelector('aside')?.getBoundingClientRect().width ?? 0))
+      .toBeLessThanOrEqual(1)
 
     // Nothing inside the panel can be reached by Tab.
     await page.locator('body').focus()

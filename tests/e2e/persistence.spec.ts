@@ -62,13 +62,15 @@ test('expressions, colour, visibility, sliders, viewport, theme and panel state 
   await expect(page.getByRole('button', { name: 'Show expressions panel', exact: true })).toBeVisible()
 
   await waitForStorageToSettle(page)
+  // Collapsing widens the canvas; the view keeps centre and scale, so compare against the post-collapse view.
+  const savedVp = await readViewport(page)
   await page.reload()
 
   await expect(page.getByRole('button', { name: 'Show expressions panel', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(true)
   const vp = await readViewport(page)
-  expect(vp.xMin).toBe(-8)
-  expect(vp.xMax).toBe(12)
+  expect(vp).toEqual(savedVp)
+  expect((vp.xMin + vp.xMax) / 2).toBeCloseTo(2, 2)
   await expect.poll(() => countColourPixels(page, PALETTE[2].dark)).toBeGreaterThan(100)
 
   await page.getByRole('button', { name: 'Show expressions panel', exact: true }).click()
@@ -110,11 +112,15 @@ for (const garbage of ['{corrupt', 'null', '[]', '42', '{"expressions":"nope","v
     await page.keyboard.press('ArrowRight')
     await toolbarButton(page, 'Switch to dark theme').click()
     await waitForStorageToSettle(page)
-    const keys = await page.evaluate((value) => {
-      const ks = Object.keys(localStorage)
-      for (const k of ks) localStorage.setItem(k, value)
-      return ks
-    }, garbage)
+    const keys = await page.evaluate(() => Object.keys(localStorage))
+    // The app flushes state on pagehide, so write the garbage from an init script that runs
+    // after the unload flush and before the app boots.
+    await page.addInitScript(
+      ({ keys, value }) => {
+        for (const k of keys) localStorage.setItem(k, value)
+      },
+      { keys, value: garbage },
+    )
     expect(keys.length, 'the app should have persisted something').toBeGreaterThan(0)
     await page.reload()
     await expect(exprInput(page, 1)).toBeVisible()
