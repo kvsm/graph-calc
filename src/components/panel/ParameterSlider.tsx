@@ -74,7 +74,7 @@ export function ParameterSlider({ parameter: p, playing, onChange, onTogglePlay 
             onCommit={(t) => apply(commitMin(p, t))}
           />
           <SliderPrimitive.Root
-            className="relative flex min-w-24 flex-1 touch-none items-center py-2 select-none"
+            className="relative flex min-h-6 min-w-24 flex-1 touch-none items-center select-none pointer-coarse:min-h-11"
             value={[p.value]}
             min={p.min}
             max={p.max}
@@ -86,11 +86,18 @@ export function ParameterSlider({ parameter: p, playing, onChange, onTogglePlay 
             <SliderPrimitive.Track className="relative h-1 grow overflow-hidden rounded-full bg-muted">
               <SliderPrimitive.Range className="absolute h-full bg-primary" />
             </SliderPrimitive.Track>
+            {/* The thumb element is the (transparent) target: 24px, 44px on coarse pointers
+                (WCAG 2.5.8); the visible 16px dot is drawn inside it. */}
             <SliderPrimitive.Thumb
               aria-label={name}
               aria-valuetext={`${name} = ${valueText}`}
-              className="relative block size-4 shrink-0 rounded-full border border-ring bg-white ring-ring/50 outline-none after:absolute after:-inset-2 hover:ring-3 focus-visible:ring-3 pointer-coarse:size-6"
-            />
+              className="group/thumb flex size-6 shrink-0 items-center justify-center rounded-full outline-none pointer-coarse:size-11"
+            >
+              <span
+                aria-hidden
+                className="block size-4 rounded-full border border-ring bg-white ring-ring/50 transition-[box-shadow] group-hover/thumb:ring-3 group-focus-visible/thumb:ring-3"
+              />
+            </SliderPrimitive.Thumb>
           </SliderPrimitive.Root>
           <NumberField
             aria-label={`Maximum for ${name}`}

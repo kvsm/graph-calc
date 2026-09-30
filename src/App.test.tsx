@@ -146,6 +146,25 @@ describe("expression input (§2–§3)", () => {
     )
   })
 
+  it("announces the exact §3.1 message on blur", async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.clear(input(1))
+    await user.type(input(1), "sin(")
+    await user.tab()
+    await waitFor(() => expect(liveRegion()).toHaveTextContent("Expression 1: Missing closing bracket )."))
+  })
+
+  it("sinx plots as sin(x) without creating sliders", async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.clear(input(1))
+    await user.type(input(1), "sinx")
+    await waitFor(() => expect(graph.props!.plots[0].label).toBe("sinx"))
+    expect(screen.queryAllByRole("slider")).toHaveLength(0)
+    expect(graph.props!.params).toEqual({})
+  })
+
   it("clears the error as soon as the text becomes valid", async () => {
     const user = userEvent.setup()
     render(<App />)
