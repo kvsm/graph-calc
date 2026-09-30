@@ -169,7 +169,7 @@ export function ExpressionPanel({
         aria-label="Expressions"
         inert={collapsed}
         className={cn(
-          "relative flex shrink-0 flex-col overflow-hidden bg-background duration-150 motion-safe:transition-[width]",
+          "relative flex shrink-0 flex-col overflow-hidden bg-background motion-safe:transition-[width] motion-safe:duration-150",
           collapsed ? "w-0" : "w-72 border-r lg:w-96",
         )}
       >
@@ -268,7 +268,7 @@ function BottomSheet({
       aria-label="Expressions"
       className={cn(
         "fixed inset-x-0 bottom-0 z-20 flex flex-col rounded-t-xl border-t bg-background pb-[env(safe-area-inset-bottom)] shadow-lg",
-        dragHeight === null && "duration-150 motion-safe:transition-[height]",
+        dragHeight === null && "motion-safe:transition-[height] motion-safe:duration-150",
         expanded ? "h-[85dvh]" : "h-[35dvh]",
       )}
       style={dragHeight !== null ? { height: dragHeight } : undefined}

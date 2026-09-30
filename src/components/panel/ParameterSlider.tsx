@@ -95,7 +95,7 @@ export function ParameterSlider({ parameter: p, playing, onChange, onTogglePlay 
             >
               <span
                 aria-hidden
-                className="block size-4 rounded-full border border-ring bg-white ring-ring/50 transition-[box-shadow] group-hover/thumb:ring-3 group-focus-visible/thumb:ring-3"
+                className="block size-4 rounded-full border border-ring bg-white ring-ring/50 motion-safe:transition-[box-shadow] group-hover/thumb:ring-3 group-focus-visible/thumb:ring-3"
               />
             </SliderPrimitive.Thumb>
           </SliderPrimitive.Root>
