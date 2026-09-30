@@ -78,3 +78,36 @@ describe('formatTickLabel', () => {
     expect(formatTickLabel(NaN, 1)).toBe('')
   })
 })
+
+describe('formatNumber: negatives and rounding across thresholds (test-gaps D17)', () => {
+  it.each([
+    [-0.00001234, '-1.234e-5'],
+    [-1e6, '-1e6'],
+    [-0.000049999, '-5e-5'],
+    [999950, '1e6'],
+    [-999950, '-1e6'],
+    [999949, '999900'],
+    [0.0001, '0.0001'],
+    [0.000099999, '0.0001'],
+  ])('%s -> %s', (value, expected) => {
+    expect(formatNumber(value)).toBe(expected)
+  })
+})
+
+describe('formatTickLabel: fixed/scientific boundary (test-gaps D19)', () => {
+  it('uses fixed notation at step 1e-4 and scientific below', () => {
+    expect(formatTickLabel(1e-4, 1e-4)).toBe('0.0001')
+    expect(formatTickLabel(3e-4, 1e-4)).toBe('0.0003')
+    expect(formatTickLabel(1e-4, 5e-5)).toBe('1e-4')
+    expect(formatTickLabel(1.5e-4, 5e-5)).toBe('1.5e-4')
+  })
+  it('formats negative scientific labels', () => {
+    expect(formatTickLabel(-5e-6, 1e-6)).toBe('-5e-6')
+    expect(formatTickLabel(-3e-6, 1e-6)).toBe('-3e-6')
+    expect(formatTickLabel(-2e6, 1e6)).toBe('-2e6')
+  })
+  it('never returns -0', () => {
+    expect(formatTickLabel(-0, 1e-6)).toBe('0')
+    expect(formatTickLabel(-1e-22, 1e-6)).toBe('0')
+  })
+})

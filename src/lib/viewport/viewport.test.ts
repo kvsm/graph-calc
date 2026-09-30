@@ -197,3 +197,57 @@ describe('isValidViewport', () => {
     expect(isValidViewport(value)).toBe(false)
   })
 })
+
+describe('zoom limits as a key-press sequence (test-gaps E22)', () => {
+  it('25 x zoom in from the default ends at MIN_SPAN, then returns the same object', () => {
+    let vp = defaultViewport({ width: 800, height: 600 })
+    for (let i = 0; i < 25; i++) vp = zoomCenter(vp, 2)
+    expect(spanX(vp) / MIN_SPAN).toBeCloseTo(1, 9)
+    expect(canZoom(vp, 2)).toBe(false)
+    expect(zoomCenter(vp, 2)).toBe(vp)
+    expect(canZoom(vp, 0.5)).toBe(true)
+    // Centre is preserved throughout.
+    expect(center(vp).x).toBeCloseTo(0, 12)
+    expect(center(vp).y).toBeCloseTo(0, 12)
+  })
+
+  it('zooming out repeatedly ends at MAX_SPAN, then returns the same object', () => {
+    let vp = defaultViewport({ width: 800, height: 600 })
+    for (let i = 0; i < 20; i++) vp = zoomCenter(vp, 0.5)
+    expect(spanX(vp) / MAX_SPAN).toBeCloseTo(1, 9)
+    expect(zoomCenter(vp, 0.5)).toBe(vp)
+    expect(Object.values(vp).every(Number.isFinite)).toBe(true)
+  })
+})
+
+describe('tall phone aspect 320x700 (test-gaps E23)', () => {
+  const phone = { width: 320, height: 700 }
+  it('defaultViewport has a y span larger than the x span at 1:1 scale', () => {
+    const vp = defaultViewport(phone)
+    expect(spanX(vp)).toBe(20)
+    expect(spanY(vp)).toBeCloseTo(43.75)
+    const upp = unitsPerPixel(vp, phone)
+    expect(upp.x).toBeCloseTo(upp.y)
+  })
+  it('fitAspect keeps the x-range and centre and sets the tall y span', () => {
+    const vp = fitAspect({ xMin: 0, xMax: 10, yMin: 4, yMax: 6 }, phone)
+    expect(vp.xMin).toBe(0)
+    expect(vp.xMax).toBe(10)
+    expect(spanY(vp)).toBeCloseTo(21.875)
+    expect(center(vp).y).toBeCloseTo(5)
+  })
+  it('resizeViewport from desktop to phone keeps scale and centre', () => {
+    const desktop = { width: 800, height: 600 }
+    const vp = centerOn(defaultViewport(desktop), { x: 3, y: -2 })
+    const out = resizeViewport(vp, desktop, phone)
+    expect(unitsPerPixel(out, phone).x).toBeCloseTo(unitsPerPixel(vp, desktop).x)
+    expect(unitsPerPixel(out, phone).y).toBeCloseTo(unitsPerPixel(vp, desktop).y)
+    expect(spanY(out)).toBeGreaterThan(spanX(out))
+    expect(center(out).x).toBeCloseTo(3)
+    expect(center(out).y).toBeCloseTo(-2)
+    // And back again.
+    const back = resizeViewport(out, phone, desktop)
+    expect(back.xMin).toBeCloseTo(vp.xMin)
+    expect(back.yMax).toBeCloseTo(vp.yMax)
+  })
+})
