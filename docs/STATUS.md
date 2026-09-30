@@ -14,6 +14,14 @@
 - `docs/PHASE2-CONTRACT.md`: file ownership and shared interfaces (`src/state/types.ts`)
 - `docs/reviews/`: test-gaps, test-results, code-a11y-review (CR-*), ux-review (UX-*)
 
+## frontend-dev wind-up report
+- Committed: c84180d (math part of CR-02, CR-03, CR-19, UX-15). 440 unit tests pass at HEAD.
+- Stashed as "frontend-dev WIP: fix round 2" (check `git stash list`; it was stash@{0} but index may shift):
+  CR-01, 02 (boundary + table guard), 04, 06, 08-15, 17, 18, 20, 21, CR-05 sheet cap; UX-02, 03, 04, 05, 07, 11, 16, 19, 20, 22, 23, 24, 27.
+  **8 persistence/App unit tests fail in the stash**; tests also need updating for new copy/labels.
+- Not started: UX-13, UX-14 (conflict with §3.1 exact microcopy: needs a spec amendment first).
+- Note: CR-03 keeps error-parse per keystroke (so §3 "clears immediately" holds); the 500-char cap bounds cost.
+
 ## Outstanding: fix round 2 (check `git log` to see which of these landed)
 **frontend-dev** (App, state, panel, hooks, lib/math, index.css):
 - CR-01 (animation keeps running for a deleted parameter)
