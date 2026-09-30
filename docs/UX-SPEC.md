@@ -42,11 +42,15 @@ at any width. Two regions: **Expression panel** and **Graph**.
 - The panel becomes a **bottom sheet** built from a fixed `div` (not shadcn `Sheet`, because the
   graph must stay interactive behind it; `Sheet` is modal). Two snap states:
   - **Peek**: `h-[35dvh]` — graph remains visible and usable above.
-  - **Expanded**: `h-[85dvh]`.
+  - **Expanded**: `h-[min(85dvh,calc(100dvh-4.5rem))]`, capped so it never covers the toolbar row (CR-05).
 - Sheet top has a 44px-tall drag handle bar (`button`, `aria-label="Resize expressions panel"`,
   `aria-expanded`). Tap toggles peek/expanded; vertical drag snaps to nearest state. Keyboard:
   Enter/Space toggles.
-- Toolbar moves to `top-3 right-3` still (top of graph, away from sheet). Buttons are 44px.
+- Below `sm` the toolbar is a **single horizontal row** at `top-3 right-3` (`max-sm:flex-row`, separator
+  vertical, `aria-orientation="horizontal"`), 44px buttons (CR-05). The expanded sheet cap above keeps it visible.
+- **Visible area (UX-04):** on phones the graph frames the area *above* the sheet, not the whole canvas.
+  The default view, Reset view, and toolbar/keyboard zoom centre all use that visible rect
+  (canvas height minus the sheet's current height), and so does the empty-state hint's position.
 - The on-screen keyboard: when an input is focused, auto-expand the sheet so the input is not
   covered (`scrollIntoView({block:"nearest"})`).
 - Sheet has `rounded-t-xl border-t bg-background shadow-lg`, safe-area padding
@@ -81,7 +85,8 @@ Each item is an `<li>` in a `<ul aria-label="Expression list">`. Layout: `flex i
 4. **Error line** — below the input, `text-xs text-destructive flex gap-1`, with an `AlertCircle`
    icon (`aria-hidden`). `id="expr-<id>-error"`. Only shown after the debounce settles (§3).
 5. **Overflow menu** — `Button variant="ghost" size="icon"` (`MoreVertical`),
-   `aria-label="More options for expression 2"`, opens shadcn `DropdownMenu` with:
+   `aria-label="More options for expression 2"`, opens shadcn `DropdownMenu` **non-modal** (`modal={false}`,
+   CR-14: the rest of the page stays interactive; Escape closes it and focus returns to the trigger) with:
    - **Colour…** → opens a `Popover` anchored to the swatch with a radiogroup of the 7 palette
      swatches (§8), each `size-8` (`size-11` coarse), `role="radio"`, `aria-label` = colour name
      ("Blue", "Vermillion", ...). Arrow keys move, Enter/Space selects, Escape closes and returns
@@ -146,7 +151,7 @@ gaps in the curve.
 - Row layout (`flex items-center gap-2 pl-7 pt-2`):
   `[▶ play] a = [ 1.0 ] [min] ===o===== [max]`
   - Play button: `Button ghost icon size-8` (`size-11` coarse), `Play`/`Pause` icons,
-    `aria-label="Animate a"` / `"Pause a"`, `aria-pressed`.
+    constant `aria-label="Animate a"` with `aria-pressed` carrying the state (CR-20); play/pause is shown only by the icon.
   - Label `a =` (`font-mono text-sm`), then a numeric `Input` (`w-16 text-right tabular-nums`,
     `aria-label="Value of a"`), editable directly.
   - Min / max: small `Input` (`w-12 text-xs`), `aria-label="Minimum for a"` / `"Maximum for a"`.
@@ -177,8 +182,8 @@ gaps in the curve.
 | Double-click / double-tap | Zoom in ×2 around the point. |
 | Hover (fine pointer) | Trace: snap to the nearest visible curve point within 24px (screen) of the pointer; show tooltip. |
 | Touch press-and-hold (300ms) | Trace mode; moving the finger traces instead of panning until lift. |
-| Toolbar zoom in / out | ×2 / ×0.5 around the viewport centre. |
-| Reset view | x ∈ [-10, 10], y scaled to keep **1:1 aspect** centred on origin. |
+| Toolbar zoom in / out | ×2 / ×0.5 around the viewport centre (on phones, the centre of the area above the sheet, §1.3). |
+| Reset view | x ∈ [-10, 10], y scaled to keep **1:1 aspect** centred on origin (on phones, centred in the area above the sheet, §1.3). |
 
 Zoom limits: visible x-span between `1e-6` and `1e6`. Buttons/keys at a limit do nothing
 (and zoom buttons get `disabled`).
@@ -305,7 +310,8 @@ Map these to shadcn CSS variables (`--ring`, `--destructive`) and graph-specific
    - Slider animation: NOT announced per frame; announce "Animating a" / "Paused a = 3.4".
 3. **Focus order** (desktop): panel header buttons → each expression row (swatch → input → overflow
    → slider controls) → footer → graph canvas → toolbar. Phone: sheet handle → sheet content → canvas → toolbar.
-   Opening Popover/Dialog/DropdownMenu traps focus inside; closing returns it to the trigger.
+   Opening Popover/Dialog traps focus inside; row overflow menus are non-modal (CR-14) and do not trap
+   focus outside the menu. Closing any of them (including with Escape) returns focus to the trigger.
 4. **Focus rings**: every focusable element shows `focus-visible:ring-[3px] ring-ring/50`
    plus `outline-none` only when the ring exists (shadcn default). The canvas wrapper shows an
    inset 2px `--ring` outline (`focus-visible:outline-2 outline-offset-[-2px]`). Never remove focus styles.
@@ -340,7 +346,7 @@ Map these to shadcn CSS variables (`--ring`, `--destructive`) and graph-specific
 | Slider | — | "a", valuetext "a = 1.0" |
 | Slider value / min / max | — | "Value of a" / "Minimum for a" / "Maximum for a" |
 | Slider settings | Min / Max / Step | "Slider settings for a" |
-| Play / pause | — | "Animate a" / "Pause a" |
+| Play / pause | — | "Animate a" (constant) + `aria-pressed` (CR-20) |
 | Toolbar | — | "Graph controls" |
 | Zoom in / out | — | "Zoom in" (+) / "Zoom out" (−) |
 | Reset | — | "Reset view" (0) |
@@ -368,7 +374,8 @@ Layout
 1. At 1280×800 the panel is 384px wide on the left; at 800×1000 it is 288px; at 375×812 it is a bottom sheet.
 2. No horizontal scrollbar at 320px width or at 200% zoom on 1280px.
 3. Collapsing the panel hides it, removes its contents from the tab order, and shows a "Show expressions panel" button; state persists after reload.
-4. On phone, the sheet toggles between ~35% and ~85% viewport height via tap and via Enter/Space on the handle; the graph above stays pannable.
+4. On phone, the sheet toggles between ~35% and ~85% viewport height (never higher than `100dvh - 4.5rem`) via tap and via Enter/Space on the handle; the graph above stays pannable and the horizontal toolbar row stays fully visible when expanded.
+4a. On phone, first run and Reset view put the origin at the centre of the area above the peek sheet, and zoom buttons zoom around that point.
 
 Expressions
 5. First run shows `y = sin(x)` in Blue (`#0072B2` light) plus an empty row with the placeholder "e.g. y = x^2", shown untruncated at 320, 800 and 1440px widths; the panel header reads "Expressions".
@@ -381,19 +388,19 @@ Expressions
 12. `sin(`, `y =`, `foo(x)`, `2 +`, `x = 3` each show the exact §3.1 message, with `aria-invalid="true"` and `aria-describedby` pointing at it.
 13. No input from §3.1 crashes the app or throws to the console as uncaught.
 14. Swatch toggle hides/shows the curve; hidden state is a hollow slashed ring; `aria-pressed` updates.
-15. Overflow menu offers Colour…, Table of values, Delete; Colour opens a keyboard-operable radiogroup of 7 colours.
+15. Overflow menu offers Colour…, Table of values, Delete; it is non-modal, Escape closes it and focus returns to its trigger; Colour opens a keyboard-operable radiogroup of 7 colours.
 16. Deleting moves focus to the next row's input (or previous if last) and announces "Expression N deleted."
 
 Sliders
 17. `a*sin(x)` creates a slider for `a` with value 1, range -10..10, step 0.1; dragging updates the curve live.
 18. Min/max/step are editable; min ≥ max is rejected with "Min must be less than max".
-19. Play animates a ping-pong sweep; with reduced motion it advances in discrete 500ms steps.
+19. Play animates a ping-pong sweep; with reduced motion it advances in discrete 500ms steps. The button's accessible name stays "Animate a" while playing; `aria-pressed` toggles and only the icon changes.
 20. Slider exposes `aria-valuetext` like "a = 1.0".
 
 Graph
 21. Wheel zoom keeps the point under the cursor fixed; the page does not scroll.
 22. Drag pans; pinch zooms on touch (Playwright touch emulation or manual).
-23. Toolbar is top-right, vertical, with Zoom in, Zoom out, Reset view, Theme, Keyboard shortcuts; each has an aria-label and tooltip.
+23. Toolbar is top-right, vertical at ≥640px and a single horizontal row of 44px buttons below 640px, with Zoom in, Zoom out, Reset view, Theme, Keyboard shortcuts; each has an aria-label and tooltip.
 24. Focused canvas: arrows pan, +/- zoom, 0 resets, T enters trace, [ ] switch curves, ←/→ move along the curve by one minor grid step (Shift: one major step) with x snapped to that grid, Escape exits; Tab leaves the canvas.
 25. `tan(x)` and `1/x` show no vertical connecting lines at asymptotes.
 26. Trace tooltip shows the expression and `(x, y)` with ≤4 significant figures (e.g. `(1.571, 1)`), scientific notation for tiny/huge values.
