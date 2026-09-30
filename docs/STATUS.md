@@ -62,3 +62,12 @@
 - In the last run, 5 of the older specs also failed and haven't been triaged: trace step, persistence round-trip,
   panel collapse, sheet toggle, theme persistence.
 - Not covered: a deterministic error-boundary trigger (needs a test hook), and how the focus ring and hint look.
+
+## frontend-dev-2 wind-up report
+- **All graph items in fix round 2 are done** and committed in 09792f5; nothing is stashed. Build, lint and 567 unit tests pass.
+  Items: UX-01, 04, 08, 09, 10, 12, 17, 18, 25, 26, and CR-05, 07, 16, 21.
+- Playwright hasn't been re-run. Three older e2e checks will now fail because the behaviour changed as intended:
+  - `graph.spec.ts:301` (Shift+Arrow trace now steps by the major grid step)
+  - `graph.spec.ts:65` (on phones the toolbar is `aria-orientation="horizontal"`)
+  - `graph.spec.ts:125` (zoom buttons use `aria-disabled`, and `toBeDisabled` may not count that)
+- The empty-state hint has `data-testid="empty-graph-hint"`.
