@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { defaultViewport, toScreenX, toScreenY } from "@/lib/viewport"
 import {
   cycleId,
+  findTraceStart,
   findDefinedX,
   keepInView,
   nearestCurvePoint,
@@ -142,5 +143,50 @@ describe("keepInView", () => {
     const next = keepInView(vp, { x: -20, y: NaN })
     expect(next.yMin).toBe(vp.yMin)
     expect(next.xMin).toBeCloseTo(-21)
+  })
+})
+
+describe("findTraceStart (T entry point)", () => {
+  it("starts at the centre x when y is on-screen", () => {
+    expect(findTraceStart((x) => x, vp, size)).toEqual({ x: 0, viewport: vp })
+  })
+
+  it("searches outward for an on-screen y when the centre is undefined", () => {
+    const start = findTraceStart((x) => Math.sqrt(x - 3), vp, size)!
+    expect(start.viewport).toBe(vp)
+    expect(start.x).toBeCloseTo(3)
+  })
+
+  it("skips x where y is defined but off-screen", () => {
+    const start = findTraceStart((x) => 1 / x, vp, size)!
+    expect(start.viewport).toBe(vp)
+    expect(Math.abs(1 / start.x)).toBeLessThanOrEqual(vp.yMax)
+    // Nearest such x to the centre: |x| just over 1/7.5.
+    expect(Math.abs(start.x)).toBeGreaterThanOrEqual(1 / 7.5)
+    expect(Math.abs(start.x)).toBeLessThan(1 / 7.5 + 0.03)
+  })
+
+  it("pans vertically when the curve is defined but never on-screen", () => {
+    const start = findTraceStart((x) => x + 100, vp, size)!
+    expect(start.x).toBe(0)
+    expect(start.viewport.xMin).toBe(vp.xMin)
+    expect(start.viewport.xMax).toBe(vp.xMax)
+    expect((start.viewport.yMin + start.viewport.yMax) / 2).toBeCloseTo(100)
+    expect(start.viewport.yMax - start.viewport.yMin).toBeCloseTo(vp.yMax - vp.yMin)
+  })
+
+  it("pans to the defined x nearest the centre when the centre is undefined", () => {
+    const start = findTraceStart((x) => (x > 5 ? 1000 : NaN), vp, size)!
+    expect(start.x).toBeCloseTo(5.025)
+    expect((start.viewport.yMin + start.viewport.yMax) / 2).toBeCloseTo(1000)
+  })
+
+  it("returns null when undefined across the visible range", () => {
+    expect(findTraceStart((x) => Math.sqrt(x - 100), vp, size)).toBeNull()
+    expect(findTraceStart(() => NaN, vp, size)).toBeNull()
+  })
+
+  it("stays within the visible x-range", () => {
+    expect(findTraceStart((x) => (x > 10.01 ? 0 : NaN), vp, size)).toBeNull()
   })
 })

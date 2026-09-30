@@ -127,3 +127,43 @@ export function keepInView(vp: Viewport, pt: Vec2, marginFraction = 0.05): Viewp
   if (dx === 0 && dy === 0) return vp
   return { xMin: vp.xMin + dx, xMax: vp.xMax + dx, yMin: vp.yMin + dy, yMax: vp.yMax + dy }
 }
+
+export interface TraceStart {
+  x: number
+  /** The viewport to show: `vp` itself, or `vp` panned vertically so the point is visible. */
+  viewport: Viewport
+}
+
+/**
+ * Where keyboard trace (T) starts on a curve (team-lead decision on UX-SPEC §5.2):
+ * 1. the x nearest the viewport centre, searching outward a pixel at a time within
+ *    the visible x-range, whose y is defined and on-screen;
+ * 2. otherwise the defined x nearest the centre, with the view panned vertically
+ *    to centre that point;
+ * 3. otherwise (undefined across the whole visible range) null.
+ */
+export function findTraceStart(f: (x: number) => number, vp: Viewport, size: Size): TraceStart | null {
+  const x0 = (vp.xMin + vp.xMax) / 2
+  const dx = unitsPerPixel(vp, size).x
+  const steps = Math.max(1, Math.ceil(size.width / 2))
+  const candidates: number[] = [x0]
+  for (let i = 1; i <= steps; i++) {
+    const r = x0 + i * dx
+    const l = x0 - i * dx
+    if (r <= vp.xMax) candidates.push(r)
+    if (l >= vp.xMin) candidates.push(l)
+  }
+  let firstDefined: { x: number; y: number } | null = null
+  for (const x of candidates) {
+    const y = safeEval(f, x)
+    if (Number.isNaN(y)) continue
+    if (y >= vp.yMin && y <= vp.yMax) return { x, viewport: vp }
+    firstDefined ??= { x, y }
+  }
+  if (!firstDefined) return null
+  const dy = firstDefined.y - (vp.yMin + vp.yMax) / 2
+  return {
+    x: firstDefined.x,
+    viewport: { xMin: vp.xMin, xMax: vp.xMax, yMin: vp.yMin + dy, yMax: vp.yMax + dy },
+  }
+}

@@ -9,14 +9,12 @@ import type { Segment } from "@/lib/math"
 import { paletteColor } from "@/lib/palette"
 import {
   canZoom,
-  center,
   formatPoint,
   panByFraction,
   panByPixels,
   resizeViewport,
   toScreenX,
   toScreenY,
-  unitsPerPixel,
   wheelZoomFactor,
   zoomAt,
   zoomCenter,
@@ -42,7 +40,7 @@ import { effectiveViewport } from "./layout"
 import { createSampleCache } from "./sampleCache"
 import { ShortcutsDialog } from "./ShortcutsDialog"
 import { tooltipPosition } from "./tooltip"
-import { cycleId, findDefinedX, keepInView, nearestCurvePoint, safeEval, stepTraceX } from "./trace"
+import { cycleId, findTraceStart, keepInView, nearestCurvePoint, safeEval, stepTraceX } from "./trace"
 
 export const GRAPH_WRAPPER_LABEL = "Graph. Arrow keys pan, plus and minus zoom, T traces."
 export const EMPTY_GRAPH_HINT = "Add an expression to see it graphed."
@@ -445,15 +443,17 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
           announce("Trace off.")
           return
         }
-        const plot = visible[0]
-        if (!plot || !hasSize) {
-          announce("Nothing to trace.")
+        // First visible curve with anything to trace in the visible x-range (normally visible[0]).
+        for (const plot of hasSize ? visible : []) {
+          const f = evaluator(plot, params)
+          const start = findTraceStart(f, vp, size)
+          if (!start) continue
+          if (start.viewport !== vp) emit(start.viewport)
+          setTrace({ id: plot.id, x: start.x, source: "keyboard" })
+          announce(traceAnnouncement(plot.label, start.x, safeEval(f, start.x)))
           return
         }
-        const f = evaluator(plot, params)
-        const x = findDefinedX(f, center(vp).x, unitsPerPixel(vp, size).x, Math.ceil(size.width / 2))
-        setTrace({ id: plot.id, x, source: "keyboard" })
-        announce(traceAnnouncement(plot.label, x, safeEval(f, x)))
+        announce("Nothing to trace in view.")
         return
       }
       case "traceStep": {
@@ -516,7 +516,7 @@ export function GraphView({ plots, params, viewport, onViewportChange, theme, on
         aria-label={GRAPH_WRAPPER_LABEL}
         aria-describedby={LIVE_REGION_ID}
         onKeyDown={onKeyDown}
-        className="absolute inset-0 outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        className="absolute inset-0 outline-hidden focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring"
       >
         <canvas
           ref={canvasRef}

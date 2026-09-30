@@ -219,12 +219,37 @@ describe("GraphView keyboard", () => {
     expect(spanX(vp)).toBeCloseTo(0.2)
   })
 
-  it("shows undefined for points outside the domain", async () => {
+  it("does not enter trace when the curve is undefined across the view", async () => {
     const user = userEvent.setup()
     render(<Harness plots={[plot("a", "y = sqrt(x - 100)")]} />)
     wrapper().focus()
     await user.keyboard("t")
-    expect(screen.getByTestId("trace-tooltip")).toHaveTextContent("(0, undefined)")
+    expect(screen.queryByTestId("trace-tooltip")).toBeNull()
+    await waitFor(() =>
+      expect(document.getElementById(LIVE_REGION_ID)).toHaveTextContent("Nothing to trace in view."),
+    )
+    // Still not tracing: arrows pan instead of stepping.
+    await user.keyboard("{ArrowRight}")
+    expect(screen.queryByTestId("trace-tooltip")).toBeNull()
+  })
+
+  it("pans vertically so an off-screen curve's trace point is visible", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(<Harness onChange={onChange} plots={[plot("a", "y = x + 100")]} />)
+    wrapper().focus()
+    await user.keyboard("t")
+    const vp = last(onChange)!
+    expect((vp.yMin + vp.yMax) / 2).toBeCloseTo(100)
+    expect(screen.getByTestId("trace-tooltip")).toHaveTextContent("(0, 100)")
+  })
+
+  it("starts at the nearest on-screen point when the centre is undefined", async () => {
+    const user = userEvent.setup()
+    render(<Harness plots={[plot("a", "y = sqrt(x - 3)")]} />)
+    wrapper().focus()
+    await user.keyboard("t")
+    expect(screen.getByTestId("trace-tooltip")).toHaveTextContent("(3, 0)")
   })
 
   it("does not handle Tab, so focus leaves the graph while tracing", async () => {
