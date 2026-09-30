@@ -47,7 +47,7 @@ A single-page graphing calculator web app (think lightweight Desmos).
 `npm run dev`, `npm run build`, `npm run lint`, `npm test` (vitest run), `npm run test:e2e`
 
 ## Working agreements
-- Only the frontend dev edits `src/` app code. Testers write tests; reviewers write reports
+- Only frontend devs (`frontend-dev`, `frontend-dev-2`) edit `src/` app code, each within the paths they have been assigned. Commit with pathspecs (`git commit -- <your paths>`); on `.git/index.lock` wait and retry, never delete it. Testers write tests; reviewers write reports
   in `docs/reviews/` and do not edit app code.
 - Reports list findings as: severity (blocker/major/minor), file:line, problem, suggested fix.
 - Commit your own work with clear messages (`git add` only your files).
