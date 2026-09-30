@@ -21,7 +21,7 @@ at any width. Two regions: **Expression panel** and **Graph**.
 - Root: `flex flex-row`. Panel is `<aside aria-label="Expressions">` with `border-r bg-background`,
   `flex flex-col`. Graph is `<main>` containing the canvas, `relative flex-1 min-w-0`.
 - Panel structure, top to bottom:
-  1. **Header** (`h-12 px-3 flex items-center justify-between border-b`): title "Graph" (text-sm
+  1. **Header** (`h-12 px-3 flex items-center justify-between border-b`): title "Expressions" (text-sm
      font-semibold), then icon buttons: *Add expression* (`Plus`), *Collapse panel* (`PanelLeftClose`).
   2. **List** in shadcn `ScrollArea` (`flex-1`), items separated by `Separator`.
   3. **Footer** hint (`p-3 text-xs text-muted-foreground`): "Tip: use a letter like a to make a slider."
@@ -75,7 +75,7 @@ Each item is an `<li>` in a `<ul aria-label="Expression list">`. Layout: `flex i
    Decorative (`aria-hidden`); the number is already in the input's label.
 3. **Input** — shadcn `Input`, `font-mono text-sm`, `spellCheck={false}`, `autoComplete="off"`,
    `autoCapitalize="off"`, `inputMode="text"`. `aria-label="Expression 2"`.
-   Placeholder on the **last, empty** row only: "Type an expression, e.g. y = x^2".
+   Placeholder on the **last, empty** row only: "e.g. y = x^2".
    Invalid: `aria-invalid="true"` (shadcn styles a destructive ring) and
    `aria-describedby` → error element id.
 4. **Error line** — below the input, `text-xs text-destructive flex gap-1`, with an `AlertCircle`
@@ -196,7 +196,7 @@ The canvas wrapper is focusable (`tabIndex=0`).
 | `T` | Enter/exit trace mode. Entering puts the point on the first visible curve at the x nearest the viewport centre. |
 | `Tab` while tracing | Leaves the canvas (trace is NOT trapped). |
 | `]` / `[` | In trace mode: next / previous visible curve (wraps), keeping the same x. |
-| ← → in trace mode | Move trace point by one pixel's worth of x (Shift: 10 px). The viewport pans to keep it in view. |
+| ← → in trace mode | Move the trace point by one minor grid step in x (major step ÷ 5); Shift moves one major step. x snaps to that grid, so readouts are round (0.4, 0.8, …). The viewport pans to keep it in view. The shortcuts dialog describes Shift as "bigger steps" (no px). |
 | ↑ ↓ in trace mode | Same as `]` / `[`. |
 | `Escape` | Exit trace mode. |
 
@@ -228,7 +228,7 @@ listing this table.
 
 ## 6. Empty state / first run
 - First run (nothing in localStorage): one expression `y = sin(x)` in palette colour 1 (Blue),
-  plus the trailing empty row with the placeholder "Type an expression, e.g. y = x^2". Default viewport.
+  plus the trailing empty row with the placeholder "e.g. y = x^2". Default viewport.
 - If the user deletes everything: only the empty row with placeholder remains, and the graph shows
   a centred, non-interactive hint `text-sm text-muted-foreground`: "Add an expression to see it graphed."
 - Persisted state restores silently. Corrupt/unavailable storage → first-run state, no error shown.
@@ -260,11 +260,11 @@ The "vs panel" columns check the swatch against `muted` backgrounds (`#F5F5F5` /
 | 2 | Vermillion | `#D55E00` | 3.87 | 3.55 | `#F07A3A` | 7.12 | 6.45 |
 | 3 | Green | `#007A5A` | 5.34 | 4.90 | `#2FC4A0` | 8.98 | 8.13 |
 | 4 | Magenta | `#B8528E` | 4.53 | 4.16 | `#CC79A7` | 6.47 | 5.86 |
-| 5 | Orange | `#A66A00` | 4.48 | 4.11 | `#E69F00` | 8.79 | 7.96 |
+| 5 | Orange | `#A66A00` | 4.48 | 4.11 | `#F0E442` | 14.97 | 13.56 |
 | 6 | Violet | `#6A3D9A` | 7.64 | 7.01 | `#B39DFF` | 8.66 | 7.84 |
 | 7 | Grey | `#3D3D3D` | 10.86 | 9.96 | `#E0E0E0` | 15.00 | 13.58 |
 
-All ≥ 3:1 (non-text contrast, WCAG 1.4.11). Ship as a TS constant
+All ≥ 3:1 (non-text contrast, WCAG 1.4.11). Slot 5 is Okabe–Ito yellow in dark (the earlier `#E69F00` was too close to Vermillion `#F07A3A` on thin lines) but keeps the name "Orange" in both themes, so colour-picker labels do not change with the theme. Ship as a TS constant
 `PALETTE: {name, light, dark}[]` in `src/lib/palette.ts`; store the **slot index** per expression
 (not hex) so theme switching works. Curves are drawn at **2.5px** line width (3px when traced).
 Colour is never the only identifier: the tooltip and table show the expression text.
@@ -326,14 +326,14 @@ Map these to shadcn CSS variables (`--ring`, `--destructive`) and graph-specific
 
 | Element | Visible text | Accessible name / tooltip |
 |---|---|---|
-| Panel title | Graph | — |
+| Panel title | Expressions | — |
 | Add button | — | "Add expression" |
 | Collapse panel | — | "Hide expressions panel" |
 | Expand panel (floating) | — | "Show expressions panel" |
 | Sheet handle | — | "Resize expressions panel" |
 | Swatch toggle | — | "Show expression N" (aria-pressed) ; tooltip "Hide" / "Show" |
 | Expression input | — | "Expression N" |
-| Placeholder | Type an expression, e.g. y = x^2 | — |
+| Placeholder | e.g. y = x^2 | — |
 | Overflow trigger | — | "More options for expression N" |
 | Menu items | Colour… / Table of values / Delete | same |
 | Colour popover | "Curve colour" (heading) | radiogroup "Curve colour for expression N" |
@@ -371,7 +371,7 @@ Layout
 4. On phone, the sheet toggles between ~35% and ~85% viewport height via tap and via Enter/Space on the handle; the graph above stays pannable.
 
 Expressions
-5. First run shows `y = sin(x)` in Blue (`#0072B2` light) plus an empty row with the placeholder.
+5. First run shows `y = sin(x)` in Blue (`#0072B2` light) plus an empty row with the placeholder "e.g. y = x^2", shown untruncated at 320, 800 and 1440px widths; the panel header reads "Expressions".
 6. Typing in the trailing empty row creates an expression and a new empty row appears.
 7. The curve updates within ~150ms of the last keystroke; an invalid edit keeps the last valid curve.
 8. Enter in an input creates/focuses a new row directly below.
@@ -394,7 +394,7 @@ Graph
 21. Wheel zoom keeps the point under the cursor fixed; the page does not scroll.
 22. Drag pans; pinch zooms on touch (Playwright touch emulation or manual).
 23. Toolbar is top-right, vertical, with Zoom in, Zoom out, Reset view, Theme, Keyboard shortcuts; each has an aria-label and tooltip.
-24. Focused canvas: arrows pan, +/- zoom, 0 resets, T enters trace, [ ] switch curves, ←/→ move along the curve, Escape exits; Tab leaves the canvas.
+24. Focused canvas: arrows pan, +/- zoom, 0 resets, T enters trace, [ ] switch curves, ←/→ move along the curve by one minor grid step (Shift: one major step) with x snapped to that grid, Escape exits; Tab leaves the canvas.
 25. `tan(x)` and `1/x` show no vertical connecting lines at asymptotes.
 26. Trace tooltip shows the expression and `(x, y)` with ≤4 significant figures (e.g. `(1.571, 1)`), scientific notation for tiny/huge values.
 27. Tick labels and grid adapt when zooming from span 20 to span 0.001 and to span 10000.
