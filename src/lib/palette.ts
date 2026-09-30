@@ -10,7 +10,7 @@ export const PALETTE: readonly PaletteColor[] = [
   { name: "Vermillion", light: "#D55E00", dark: "#F07A3A" },
   { name: "Green", light: "#007A5A", dark: "#2FC4A0" },
   { name: "Magenta", light: "#B8528E", dark: "#CC79A7" },
-  { name: "Orange", light: "#A66A00", dark: "#E69F00" },
+  { name: "Orange", light: "#A66A00", dark: "#F0E442" },
   { name: "Violet", light: "#6A3D9A", dark: "#B39DFF" },
   { name: "Grey", light: "#3D3D3D", dark: "#E0E0E0" },
 ]

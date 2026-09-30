@@ -33,7 +33,7 @@ test.describe('#28 palette', () => {
     ['Vermillion', '#D55E00', '#F07A3A'],
     ['Green', '#007A5A', '#2FC4A0'],
     ['Magenta', '#B8528E', '#CC79A7'],
-    ['Orange', '#A66A00', '#E69F00'],
+    ['Orange', '#A66A00', '#F0E442'],
     ['Violet', '#6A3D9A', '#B39DFF'],
     ['Grey', '#3D3D3D', '#E0E0E0'],
   ]
