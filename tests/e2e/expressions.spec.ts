@@ -4,6 +4,7 @@ import {
   EMPTY_GRAPH_HINT,
   FOOTER_TIP,
   PALETTE,
+  PANEL_TITLE,
   PLACEHOLDER,
   allExprInputs,
   canvas,
@@ -42,8 +43,10 @@ test.describe('first run (§6, #5)', () => {
     await expect.poll(() => countColourPixels(page, BLUE)).toBeGreaterThan(100)
   })
 
-  test('shows the panel title and footer tip', async ({ page }) => {
-    await expect(page.getByRole('complementary', { name: 'Expressions' }).getByText('Graph', { exact: true })).toBeVisible()
+  test('UX-22 shows the panel title "Expressions" and the footer tip', async ({ page }) => {
+    const aside = page.getByRole('complementary', { name: 'Expressions' })
+    await expect(aside.getByText(PANEL_TITLE, { exact: true })).toBeVisible()
+    await expect(aside.getByText('Graph', { exact: true })).toHaveCount(0)
     await expect(page.getByText(FOOTER_TIP, { exact: true })).toBeVisible()
   })
 
@@ -282,5 +285,51 @@ test.describe('deleting (#16)', () => {
     await expect(page.getByText(EMPTY_GRAPH_HINT, { exact: true })).toBeVisible()
     await expect.poll(() => countColourPixels(page, BLUE)).toBe(0)
     await expect(canvas(page)).toBeVisible()
+  })
+})
+
+test.describe('UX-05 placeholder fits untruncated (#5)', () => {
+  for (const [width, height] of [[320, 640], [800, 1000], [1440, 900]] as const) {
+    test.describe(`${width}px`, () => {
+      test.use({ viewport: { width, height } })
+      test(`"${PLACEHOLDER}" is not truncated`, async ({ page }) => {
+        const input = exprInput(page, 2)
+        await expect(input).toHaveAttribute('placeholder', PLACEHOLDER)
+        const fit = await input.evaluate((el) => {
+          const i = el as HTMLInputElement
+          const s = getComputedStyle(i)
+          const ctx = document.createElement('canvas').getContext('2d')
+          if (!ctx) throw new Error('no 2d context')
+          ctx.font = s.font
+          const text = ctx.measureText(i.placeholder).width
+          const room = i.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)
+          return { text, room }
+        })
+        expect(fit.room, `placeholder needs ${fit.text.toFixed(1)}px, input has ${fit.room.toFixed(1)}px`).toBeGreaterThanOrEqual(fit.text)
+      })
+    })
+  }
+})
+
+test.describe('CR-14 row menus are non-modal', () => {
+  test('the rest of the page stays interactive while a menu is open', async ({ page }) => {
+    const menu = await openMenu(page, 1)
+    // Nothing outside the menu is hidden from assistive technology.
+    const hiddenFocusable = await page.evaluate(
+      () => document.querySelectorAll('[aria-hidden="true"] :is(button, input, [tabindex="0"])').length,
+    )
+    expect(hiddenFocusable).toBe(0)
+    await expect(page.getByRole('main', { name: 'Graph', exact: true })).toBeVisible()
+    // A click outside goes through (and closes the menu).
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+    await expect(canvas(page)).toHaveAttribute('aria-label', /x from -5 to 5/)
+    await expect(menu).toBeHidden()
+  })
+
+  test('Escape closes the menu and returns focus to its trigger', async ({ page }) => {
+    const menu = await openMenu(page, 1)
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeHidden()
+    await expect(overflow(page, 1)).toBeFocused()
   })
 })

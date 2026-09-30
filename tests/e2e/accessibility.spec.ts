@@ -278,6 +278,29 @@ test.describe('#35 axe: zero serious/critical violations', () => {
         await page.getByRole('button', { name: 'Hide expressions panel', exact: true }).click()
         await expectNoSeriousViolations(page)
       })
+
+      test('CR-14 with a row menu open', async ({ page }) => {
+        await openApp(page)
+        await page.getByRole('button', { name: 'More options for expression 1', exact: true }).click()
+        await expect(page.getByRole('menu')).toBeVisible()
+        await expectNoSeriousViolations(page)
+      })
+
+      test('CR-04 with the colour popover open', async ({ page }) => {
+        await openApp(page)
+        await page.getByRole('button', { name: 'More options for expression 1', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Colour…' }).click()
+        await expect(page.getByRole('radiogroup', { name: 'Curve colour for expression 1' })).toBeVisible()
+        await expectNoSeriousViolations(page)
+      })
+
+      test('CR-04 with the slider settings popover open', async ({ page }) => {
+        await openApp(page)
+        await populate(page)
+        await page.getByRole('button', { name: 'Slider settings for a', exact: true }).click()
+        await expect(page.getByRole('dialog')).toBeVisible()
+        await expectNoSeriousViolations(page)
+      })
     })
 
     test.describe(`${scheme} phone`, () => {
@@ -293,6 +316,143 @@ test.describe('#35 axe: zero serious/critical violations', () => {
         await sheetHandle(page).tap()
         await populate(page)
         await expectNoSeriousViolations(page)
+      })
+    })
+  }
+})
+
+test.describe('CR-04 popovers have accessible names', () => {
+  test('colour popover is a dialog named "Curve colour"', async ({ page }) => {
+    await openApp(page)
+    await page.getByRole('button', { name: 'More options for expression 1', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Colour…' }).click()
+    await expect(page.getByRole('dialog', { name: /^Curve colour/ })).toBeVisible()
+  })
+
+  test('slider settings popover is a dialog named "Slider settings for a"', async ({ page }) => {
+    await openApp(page)
+    await setExpression(page, 2, 'y = a*x')
+    await page.getByRole('button', { name: 'Slider settings for a', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: 'Slider settings for a' })).toBeVisible()
+  })
+
+  test('no open dialog is ever unnamed', async ({ page }) => {
+    await openApp(page)
+    await setExpression(page, 2, 'y = a*x')
+    const unnamed = async () =>
+      page.getByRole('dialog').evaluateAll((els) =>
+        els.filter((e) => !e.getAttribute('aria-label') && !e.getAttribute('aria-labelledby')).length,
+      )
+    await page.getByRole('button', { name: 'Slider settings for a', exact: true }).click()
+    expect(await unnamed()).toBe(0)
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'More options for expression 1', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Colour…' }).click()
+    expect(await unnamed()).toBe(0)
+  })
+})
+
+test.describe('CR-06 focus indicators have ≥ 3:1 contrast', () => {
+  /**
+   * For each element reached by Tab, take the colour of its visible indicator (outline, or the
+   * strongest non-transparent box-shadow, on the element or a descendant), composite it over the
+   * nearest opaque background, and compute the WCAG contrast ratio against that background.
+   * Colours are resolved with a 1×1 canvas so any CSS colour syntax (oklab, oklch, rgba) works.
+   */
+  async function focusContrasts(page: Page, stops: number) {
+    // Snapshot unfocused border colours so a border only counts if it changes on focus.
+    await page.evaluate(() => {
+      const map = new WeakMap<Element, string>()
+      for (const el of Array.from(document.querySelectorAll('*'))) map.set(el, getComputedStyle(el).borderTopColor)
+      ;(window as unknown as { __borders: WeakMap<Element, string> }).__borders = map
+    })
+    await page.locator('body').focus()
+    const results: { key: string; ratio: number; colour: string; bg: string }[] = []
+    const seen = new Set<string>()
+    for (let i = 0; i < stops; i++) {
+      await page.keyboard.press('Tab')
+      await page.waitForTimeout(160)
+      const r = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null
+        if (!el || el === document.body) return null
+        const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+        if (!ctx) throw new Error('no 2d context')
+        const paint = (colours: string[]) => {
+          ctx.clearRect(0, 0, 1, 1)
+          for (const c of colours) {
+            ctx.fillStyle = '#000'
+            ctx.fillStyle = c
+            ctx.fillRect(0, 0, 1, 1)
+          }
+          const d = ctx.getImageData(0, 0, 1, 1).data
+          return [d[0], d[1], d[2], d[3]]
+        }
+        const alpha = (c: string) => paint([c])[3]
+        const bgOf = (node: Element | null): string => {
+          for (let n = node; n; n = n.parentElement) {
+            const c = getComputedStyle(n).backgroundColor
+            if (alpha(c) > 250) return c
+          }
+          return getComputedStyle(document.body).backgroundColor || '#fff'
+        }
+        /** Candidate indicator colours on one node: outline, visible box-shadows, and a border that changed on focus. */
+        const borders = (window as unknown as { __borders: WeakMap<Element, string> }).__borders
+        const candidates = (node: Element): string[] => {
+          const s = getComputedStyle(node)
+          const out: string[] = []
+          if (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) out.push(s.outlineColor)
+          if (s.boxShadow && s.boxShadow !== 'none') {
+            for (const p of s.boxShadow.split(/,(?![^(]*\))/)) {
+              if (!/[1-9]\d*(\.\d+)?px/.test(p)) continue
+              const colour = /^(.*?\))|^(#[0-9a-f]+|\w+)/i.exec(p.trim())?.[0]
+              if (colour && alpha(colour) > 0) out.push(colour)
+            }
+          }
+          if (parseFloat(s.borderTopWidth) >= 1 && s.borderTopColor !== borders.get(node)) out.push(s.borderTopColor)
+          return out
+        }
+        const lum = ([r, g, b]: number[]) => {
+          const f = (v: number) => {
+            const x = v / 255
+            return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4
+          }
+          return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+        }
+        const name = el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30) ?? ''
+        const key = `${el.tagName.toLowerCase()} "${name}"`
+        let best = { key, ratio: 0, colour: 'none', bg: '' }
+        for (const node of [el, ...Array.from(el.querySelectorAll('*'))]) {
+          // The indicator is drawn at the element's edge, so its backdrop is the parent's background.
+          const bg = bgOf(node.parentElement)
+          for (const colour of candidates(node)) {
+            const [l1, l2] = [lum(paint([bg, colour])), lum(paint([bg]))].sort((a, b) => b - a)
+            const ratio = (l1 + 0.05) / (l2 + 0.05)
+            if (ratio > best.ratio) best = { key, ratio, colour, bg }
+          }
+        }
+        return best
+      })
+      if (!r || seen.has(r.key)) continue
+      seen.add(r.key)
+      results.push(r)
+    }
+    return results
+  }
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test.describe(scheme, () => {
+      test.use({ colorScheme: scheme, viewport: { width: 1280, height: 800 } })
+
+      test('every focus indicator reached by Tab is at least 3:1 against its background', async ({ page }) => {
+        await openApp(page)
+        await setExpression(page, 2, 'y = a*x')
+        await expect(slider(page, 'a')).toBeVisible()
+        const results = await focusContrasts(page, 40)
+        expect(results.length).toBeGreaterThan(8)
+        const low = results
+          .filter((r) => r.ratio < 3)
+          .map((r) => `${r.key}: ${r.ratio.toFixed(2)}:1 (${r.colour} on ${r.bg})`)
+        expect(low, 'focus indicators under 3:1').toEqual([])
       })
     })
   }

@@ -149,11 +149,12 @@ test.describe('#18 min/max/step validation', () => {
 })
 
 test.describe('#19 animation', () => {
-  test('Play animates a sweep, toggles to Pause and announces', async ({ page }) => {
+  test('CR-20 Play animates a sweep; the label stays "Animate a" and aria-pressed toggles', async ({ page }) => {
     const play = page.getByRole('button', { name: 'Animate a', exact: true })
     await expect(play).toHaveAttribute('aria-pressed', 'false')
     await play.click()
-    const pause = page.getByRole('button', { name: 'Pause a', exact: true })
+    const pause = play // constant accessible name (CR-20)
+    await expect(page.getByRole('button', { name: 'Pause a', exact: true })).toHaveCount(0)
     await expect(pause).toHaveAttribute('aria-pressed', 'true')
     await expect(liveRegion(page)).toHaveText('Animating a')
     const samples = await sampleValues(page, 1500, 50)
@@ -165,6 +166,8 @@ test.describe('#19 animation', () => {
       expect(Math.abs(v * 10 - Math.round(v * 10))).toBeLessThan(1e-6)
     }
     await pause.click()
+    await expect(play).toHaveAttribute('aria-pressed', 'false')
+    await expect(play).toHaveAccessibleName('Animate a')
     await expect(liveRegion(page)).toHaveText(/^Paused a = -?\d+(\.\d)?$/)
     const stopped = await slider(page, 'a').getAttribute('aria-valuenow')
     await page.waitForTimeout(300)
@@ -200,5 +203,48 @@ test.describe('#20 accessible value text', () => {
   test('slider exposes aria-valuetext "a = 1.0"', async ({ page }) => {
     await expect(slider(page, 'a')).toHaveAttribute('aria-valuetext', 'a = 1.0')
     await expect(exprInput(page, 2)).toHaveValue('y = a*sin(x)')
+  })
+})
+
+test.describe('CR-01 removing a playing parameter stops its animation', () => {
+  test('editing a out of the expression stops the sweep', async ({ page }) => {
+    await page.getByRole('button', { name: 'Animate a', exact: true }).click()
+    await page.waitForTimeout(400)
+    const atRemoval = Number(await slider(page, 'a').getAttribute('aria-valuenow'))
+    await setExpression(page, 2, 'y = sin(x)')
+    await expect(slider(page, 'a')).toHaveCount(0)
+    await page.waitForTimeout(1500)
+    await setExpression(page, 2, 'y = a*sin(x)')
+    await expect(slider(page, 'a')).toBeVisible()
+    const after = Number(await slider(page, 'a').getAttribute('aria-valuenow'))
+    // A running sweep moves ~5 units/s; allow for the time between reading and editing.
+    expect(Math.abs(after - atRemoval)).toBeLessThanOrEqual(1)
+    await expect(page.getByRole('button', { name: 'Animate a', exact: true })).toHaveAttribute('aria-pressed', 'false')
+    const v1 = await slider(page, 'a').getAttribute('aria-valuenow')
+    await page.waitForTimeout(400)
+    await expect(slider(page, 'a')).toHaveAttribute('aria-valuenow', v1 ?? '')
+  })
+
+  test('deleting the row stops the sweep', async ({ page }) => {
+    await page.getByRole('button', { name: 'Animate a', exact: true }).click()
+    await page.waitForTimeout(400)
+    await page.getByRole('button', { name: 'More options for expression 2', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Delete' }).click()
+    await expect(slider(page, 'a')).toHaveCount(0)
+    const persisted = async () =>
+      page.evaluate(() => {
+        try {
+          return JSON.stringify(Object.values(localStorage))
+        } catch {
+          return ''
+        }
+      })
+    // With no slider on screen, observe the stored value: it must stop changing.
+    await page.waitForTimeout(700)
+    const s1 = await persisted()
+    await page.waitForTimeout(1000)
+    expect(await persisted()).toBe(s1)
+    await setExpression(page, 2, 'y = a*x')
+    await expect(page.getByRole('button', { name: 'Animate a', exact: true })).toHaveAttribute('aria-pressed', 'false')
   })
 })

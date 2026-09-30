@@ -2,6 +2,7 @@
 // UX-SPEC §1 — acceptance checklist items 1–4 (layout, collapse, bottom sheet, no horizontal scroll).
 import { type Page } from '@playwright/test'
 import {
+  axisPosition,
   canvas,
   expect,
   exprInput,
@@ -10,6 +11,7 @@ import {
   readViewport,
   setExpression,
   sheetHandle,
+  sheetTop,
   test,
   toolbar,
   waitForStorageToSettle,
@@ -148,14 +150,6 @@ test.describe('#4 phone bottom sheet (375×812)', () => {
     await expect.poll(async () => (await readViewport(page)).xMin).toBeLessThan(before.xMin)
   })
 
-  test('toolbar stays at the top-right with 44px buttons', async ({ page }) => {
-    await openApp(page)
-    const box = await toolbar(page).boundingBox()
-    if (!box) throw new Error('toolbar not visible')
-    expect(box.y).toBeLessThan(40)
-    expect(375 - (box.x + box.width)).toBeLessThanOrEqual(24)
-  })
-
   test('focusing an input expands the sheet', async ({ page }) => {
     await openApp(page)
     await exprInput(page, 1).tap()
@@ -218,5 +212,117 @@ test.describe('#2 no horizontal scroll', () => {
       await setExpression(page, 1, LONG_EXPR)
       await expectNoHorizontalScroll(page)
     })
+  })
+})
+
+const TOOLBAR_NAMES = ['Zoom in', 'Zoom out', 'Reset view', 'Switch to dark theme', 'Keyboard shortcuts']
+
+test.describe('CR-05 phone toolbar is one horizontal row the sheet never covers (#4, #23)', () => {
+  for (const [width, height] of [[375, 812], [320, 640]] as const) {
+    test.describe(`${width}×${height}`, () => {
+      test.use({ viewport: { width, height }, hasTouch: true })
+
+      test('toolbar is a single horizontal row of 44px buttons at the top-right', async ({ page }) => {
+        await openApp(page)
+        const bar = toolbar(page)
+        await expect(bar).toHaveAttribute('aria-orientation', 'horizontal')
+        const box = await bar.boundingBox()
+        if (!box) throw new Error('toolbar not visible')
+        expect(box.y).toBeLessThan(40)
+        expect(width - (box.x + box.width)).toBeLessThanOrEqual(24)
+        expect(box.x).toBeGreaterThanOrEqual(0)
+        const boxes = await bar.getByRole('button').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON()))
+        expect(boxes).toHaveLength(TOOLBAR_NAMES.length)
+        for (let i = 0; i < boxes.length; i++) {
+          expect(Math.round(boxes[i].width)).toBeGreaterThanOrEqual(44)
+          expect(Math.round(boxes[i].height)).toBeGreaterThanOrEqual(44)
+          if (i > 0) {
+            expect(Math.abs(boxes[i].top - boxes[0].top)).toBeLessThanOrEqual(2)
+            expect(boxes[i].left).toBeGreaterThan(boxes[i - 1].left)
+          }
+        }
+      })
+
+      test('the expanded sheet stops below the toolbar and every toolbar button stays clickable', async ({ page }) => {
+        await openApp(page)
+        await sheetHandle(page).tap()
+        await expect(sheetHandle(page)).toHaveAttribute('aria-expanded', 'true')
+        await page.waitForTimeout(250) // let the expand transition finish
+        const bar = await toolbar(page).boundingBox()
+        if (!bar) throw new Error('toolbar not visible')
+        expect(await sheetTop(page)).toBeGreaterThanOrEqual(bar.y + bar.height)
+        // Never taller than 100dvh - 4.5rem (72px).
+        expect(height - (await sheetTop(page))).toBeLessThanOrEqual(height - 72 + 1)
+        for (const name of TOOLBAR_NAMES) {
+          // trial: runs the actionability checks (visible, stable, not covered) without clicking.
+          await toolbar(page).getByRole('button', { name, exact: true }).click({ trial: true, timeout: 2000 })
+        }
+        await toolbar(page).getByRole('button', { name: 'Zoom in', exact: true }).click()
+        await expect(canvas(page)).toHaveAttribute('aria-label', /x from -5 to 5/)
+        await toolbar(page).getByRole('button', { name: 'Keyboard shortcuts', exact: true }).click()
+        await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeVisible()
+      })
+
+      test('focus on toolbar buttons is not obscured while the sheet is expanded', async ({ page }) => {
+        await openApp(page)
+        await exprInput(page, 1).tap() // auto-expands the sheet
+        await expect(sheetHandle(page)).toHaveAttribute('aria-expanded', 'true')
+        await page.waitForTimeout(250)
+        const top = await sheetTop(page)
+        for (const name of TOOLBAR_NAMES) {
+          const b = toolbar(page).getByRole('button', { name, exact: true })
+          await b.focus()
+          const box = await b.boundingBox()
+          expect((box?.y ?? 0) + (box?.height ?? 0), `${name} is above the sheet`).toBeLessThanOrEqual(top)
+        }
+      })
+    })
+  }
+})
+
+test.describe('4a phone framing: the view centres on the area above the peek sheet', () => {
+  test.use({ viewport: { width: 375, height: 812 }, hasTouch: true })
+
+  async function originOnScreen(page: Page) {
+    await page.waitForTimeout(100)
+    const axes = await axisPosition(page)
+    const box = await canvas(page).boundingBox()
+    if (!box || axes.x === null || axes.y === null) throw new Error(`axes not found: ${JSON.stringify(axes)}`)
+    return { x: box.x + axes.x, y: box.y + axes.y }
+  }
+
+  async function expectOriginCentredAboveSheet(page: Page) {
+    const o = await originOnScreen(page)
+    const box = await canvas(page).boundingBox()
+    const top = box?.y ?? 0
+    const visibleBottom = await sheetTop(page)
+    expect(Math.abs(o.x - 375 / 2), `origin x ${o.x}`).toBeLessThanOrEqual(4)
+    expect(Math.abs(o.y - (top + visibleBottom) / 2), `origin y ${o.y}, visible area ${top}..${visibleBottom}`).toBeLessThanOrEqual(6)
+  }
+
+  test('first run puts the origin at the centre of the visible area', async ({ page }) => {
+    await openApp(page)
+    await expect(sheetHandle(page)).toHaveAttribute('aria-expanded', 'false')
+    await expectOriginCentredAboveSheet(page)
+  })
+
+  test('Reset view re-centres there after panning', async ({ page }) => {
+    await openApp(page)
+    await page.mouse.move(180, 150)
+    await page.mouse.down()
+    await page.mouse.move(260, 220, { steps: 6 })
+    await page.mouse.up()
+    await toolbar(page).getByRole('button', { name: 'Reset view', exact: true }).click()
+    await expectOriginCentredAboveSheet(page)
+  })
+
+  test('zoom buttons zoom around the centre of the visible area', async ({ page }) => {
+    await openApp(page)
+    const before = await originOnScreen(page)
+    await toolbar(page).getByRole('button', { name: 'Zoom in', exact: true }).click()
+    await expect(canvas(page)).toHaveAttribute('aria-label', /x from -5 to 5/)
+    const after = await originOnScreen(page)
+    expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(3)
+    expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(3)
   })
 })

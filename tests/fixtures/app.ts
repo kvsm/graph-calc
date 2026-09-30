@@ -10,7 +10,8 @@ export { expect, PALETTE }
 
 // ---- Microcopy (UX-SPEC §10) ------------------------------------------------
 
-export const PLACEHOLDER = 'Type an expression, e.g. y = x^2'
+export const PLACEHOLDER = 'e.g. y = x^2'
+export const PANEL_TITLE = 'Expressions'
 export const WRAPPER_LABEL = 'Graph. Arrow keys pan, plus and minus zoom, T traces.'
 export const EMPTY_GRAPH_HINT = 'Add an expression to see it graphed.'
 export const FOOTER_TIP = 'Tip: use a letter like a to make a slider.'
@@ -349,4 +350,77 @@ export async function failLocalStorageWrites(page: Page) {
       throw new DOMException('Quota exceeded', 'QuotaExceededError')
     }
   })
+}
+
+// ---- Grid steps (UX-SPEC §5.4; mirrors src/lib/viewport/ticks.ts) ------------
+
+/** The 1/2/5 × 10^n step nearest (in log space) to `raw`. */
+export function niceStep(raw: number): number {
+  const exp = Math.floor(Math.log10(raw))
+  let best = 1
+  let bestErr = Infinity
+  for (const e of [exp - 1, exp, exp + 1]) {
+    for (const m of [1, 2, 5]) {
+      const step = e >= 0 ? m * 10 ** e : m / 10 ** -e
+      const err = Math.abs(Math.log(step / raw))
+      if (err < bestErr) [best, bestErr] = [step, err]
+    }
+  }
+  return best
+}
+
+/** Major x grid step for the current view (~100px spacing); the minor step is major / 5. */
+export async function xGridSteps(page: Page) {
+  const [vp, size] = await Promise.all([readViewport(page), canvasSize(page)])
+  const major = niceStep((spanX(vp) / Math.max(1, size.width)) * 100)
+  return { major, minor: major / 5 }
+}
+
+// ---- Axis location by pixel scan ----------------------------------------------
+
+/**
+ * Locate the drawn axes: the canvas row / column (CSS px, relative to the canvas) with the
+ * most axis-coloured pixels. Independent of how the aria-label ranges are framed.
+ */
+export async function axisPosition(page: Page, axisHex = '#525252', tolerance = 24) {
+  const rgb = hexToRgb(axisHex)
+  return canvas(page).evaluate(
+    (el, { rgb, tolerance }) => {
+      const c = el as HTMLCanvasElement
+      const ctx = c.getContext('2d')
+      if (!ctx) throw new Error('graph canvas has no 2d context')
+      const d = ctx.getImageData(0, 0, c.width, c.height).data
+      const rows = new Array<number>(c.height).fill(0)
+      const cols = new Array<number>(c.width).fill(0)
+      for (let y = 0; y < c.height; y++) {
+        for (let x = 0; x < c.width; x++) {
+          const i = (y * c.width + x) * 4
+          const diff = Math.abs(d[i] - rgb[0]) + Math.abs(d[i + 1] - rgb[1]) + Math.abs(d[i + 2] - rgb[2])
+          if (diff <= tolerance && d[i + 3] > 200) {
+            rows[y]++
+            cols[x]++
+          }
+        }
+      }
+      const argmax = (a: number[]) => a.reduce((best, v, i) => (v > a[best] ? i : best), 0)
+      const ry = argmax(rows)
+      const cx = argmax(cols)
+      const sx = c.clientWidth / c.width
+      const sy = c.clientHeight / c.height
+      return {
+        /** y of the x-axis line, or null if no horizontal axis line is drawn. */
+        y: rows[ry] > c.width * 0.5 ? ry * sy : null,
+        /** x of the y-axis line, or null if no vertical axis line is drawn. */
+        x: cols[cx] > c.height * 0.3 ? cx * sx : null,
+      }
+    },
+    { rgb, tolerance },
+  )
+}
+
+/** Top of the phone bottom sheet (its drag handle), in page px. */
+export async function sheetTop(page: Page) {
+  const box = await sheetHandle(page).boundingBox()
+  if (!box) throw new Error('sheet handle not visible')
+  return box.y
 }

@@ -24,6 +24,9 @@ import {
   toolbarButton,
   traceCoords,
   waitForPlot,
+  xGridSteps,
+  axisPosition,
+  sheetTop,
   worldToCanvas,
   worldToPage,
   type Viewport,
@@ -114,6 +117,9 @@ test.describe('#23 toolbar', () => {
     const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText(/tracing/i)
+    // UX-17: Shift is described as bigger steps, not pixels.
+    await expect(dialog).toContainText(/bigger steps/i)
+    await expect(dialog).not.toContainText(/\d+\s*px/)
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(toolbarButton(page, 'Keyboard shortcuts')).toBeFocused()
@@ -129,6 +135,28 @@ test.describe('#23 toolbar', () => {
     await expect(toolbarButton(page, 'Zoom out')).toBeDisabled()
     expect(spanX(await readViewport(page))).toBeLessThanOrEqual(1e6 * 1.01)
   })
+
+  for (const [name, key] of [['Zoom in', 'Enter'], ['Zoom out', 'Space']] as const) {
+    test(`CR-07 "${name}" keeps keyboard focus when it reaches the zoom limit`, async ({ page }) => {
+      const button = toolbarButton(page, name)
+      await button.focus()
+      for (let i = 0; i < 45; i++) await page.keyboard.press(key)
+      await expect(button).toBeDisabled() // disabled or aria-disabled
+      const active = await page.evaluate(() => {
+        const el = document.activeElement
+        return {
+          body: el === document.body || el === null,
+          inToolbar: !!el?.closest('[role="toolbar"]'),
+          label: el?.getAttribute('aria-label') ?? el?.tagName ?? '',
+        }
+      })
+      expect(active.body, `focus fell to <body> (active: ${active.label})`).toBe(false)
+      expect(active.inToolbar).toBe(true)
+      // Pressing again at the limit is a no-op, not an error.
+      await page.keyboard.press(key)
+      await expect(toolbar(page)).toBeVisible()
+    })
+  }
 })
 
 test.describe('#21 #22 pointer', () => {
@@ -296,12 +324,15 @@ test.describe('#24 keyboard on the focused canvas', () => {
     await page.keyboard.press('ArrowRight')
     await expect(traceCoords(page)).not.toHaveText(`(${c0.x}, ${c0.y})`)
     const c1 = parseCoords((await traceCoords(page).textContent()) ?? '')
-    const px = spanX(vp) / size.width
-    expectClose(num(c1.x) - x0, px, px * 0.5 + 0.001, 'ArrowRight moves one pixel of x')
+    // UX-17: ← → move one minor grid step (major / 5); Shift moves one major step; x snaps to the grid.
+    const { major, minor } = await xGridSteps(page)
+    expectClose(num(c1.x), Math.round(x0 / minor) * minor + minor, minor * 1e-3, 'ArrowRight moves one minor grid step')
+    expect(Math.abs(num(c1.x) / minor - Math.round(num(c1.x) / minor)), 'x snapped to the minor grid').toBeLessThan(1e-3)
     await page.keyboard.press('Shift+ArrowRight')
     await expect(traceCoords(page)).not.toHaveText(`(${c1.x}, ${c1.y})`)
     const c2 = parseCoords((await traceCoords(page).textContent()) ?? '')
-    expectClose(num(c2.x) - num(c1.x), px * 10, px * 2 + 0.001, 'Shift+ArrowRight moves 10px of x')
+    expectClose(num(c2.x) - num(c1.x), major, minor * 1e-3, 'Shift+ArrowRight moves one major grid step')
+    expectClose(num(c2.y), Math.sin(num(c2.x)), 0.001, 'still on the curve')
 
     // Trace keys must not pan the view.
     expect(await readViewport(page)).toEqual(vp)
@@ -491,4 +522,51 @@ test.describe('#27 ticks and grid adapt to zoom', () => {
       expect(await countColourPixels(page, '#E5E5E5', {}, 6)).toBeGreaterThan(50)
     })
   }
+})
+
+test.describe('UX-01 empty-state hint', () => {
+  async function deleteAll(page: Page) {
+    await page.getByRole('button', { name: 'More options for expression 1', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Delete' }).click()
+    await expect(page.getByText('Add an expression to see it graphed.', { exact: true })).toBeVisible()
+  }
+
+  async function expectHintClearOfXAxis(page: Page) {
+    const hint = page.getByText('Add an expression to see it graphed.', { exact: true })
+    // An HTML element, not canvas paint.
+    expect(await hint.evaluate((el) => el.tagName.toLowerCase())).not.toBe('canvas')
+    await expect(hint).not.toHaveAttribute('role', 'img')
+    await page.waitForTimeout(150)
+    const [box, cbox, axes] = await Promise.all([hint.boundingBox(), canvas(page).boundingBox(), axisPosition(page)])
+    if (!box || !cbox) throw new Error('hint or canvas not visible')
+    expect(axes.y, 'x-axis line found on the canvas').not.toBeNull()
+    const axisY = cbox.y + (axes.y ?? 0)
+    const overlaps = box.y - 2 <= axisY && axisY <= box.y + box.height + 2
+    expect(overlaps, `hint ${box.y}..${box.y + box.height} crosses the x-axis at y=${axisY}`).toBe(false)
+    return box
+  }
+
+  test('is an HTML overlay that does not overlap the x-axis (desktop)', async ({ page }) => {
+    await deleteAll(page)
+    await expect(canvas(page)).toHaveAttribute('aria-label', /^Graph with no expressions\./)
+    await expectHintClearOfXAxis(page)
+  })
+
+  test('stays clear of the x-axis after panning', async ({ page }) => {
+    await deleteAll(page)
+    await focusGraph(page)
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowUp')
+    await expectHintClearOfXAxis(page)
+  })
+
+  test.describe('phone', () => {
+    test.use({ viewport: { width: 375, height: 812 }, hasTouch: true })
+
+    test('sits in the visible area above the sheet and off the x-axis', async ({ page }) => {
+      await deleteAll(page)
+      const box = await expectHintClearOfXAxis(page)
+      expect(box.y + box.height).toBeLessThanOrEqual(await sheetTop(page))
+      expect(box.y).toBeGreaterThanOrEqual(0)
+    })
+  })
 })

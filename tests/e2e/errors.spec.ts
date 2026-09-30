@@ -97,3 +97,73 @@ test.describe('#13 no crashes', () => {
     }
   })
 })
+
+test.describe('CR-02 / CR-03 long input and crash safety', () => {
+  const rootIsRendered = (page: import('@playwright/test').Page) =>
+    page.evaluate(() => (document.getElementById('root')?.innerHTML.length ?? 0) > 0)
+
+  test('a 20,000-character paste never blanks the app and stays responsive', async ({ page }) => {
+    const field = exprInput(page, 1)
+    await field.fill('x'.repeat(20_000))
+    await field.blur()
+    expect(await rootIsRendered(page)).toBe(true)
+    await expect(field).toBeVisible()
+    await expect(field).toHaveAttribute('aria-invalid', 'true')
+    // The UI still responds promptly (no multi-second freeze on re-sample).
+    const start = Date.now()
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+    await expect(page.getByTestId('graph-canvas')).toHaveAttribute('aria-label', /x from -5 to 5/, { timeout: 2000 })
+    expect(Date.now() - start).toBeLessThan(1500)
+    expect(await rootIsRendered(page)).toBe(true)
+  })
+
+  test('a pasted implicit product (20,000 factors) in a second row does not crash the table or graph', async ({ page }) => {
+    await setExpression(page, 2, 'x'.repeat(20_000))
+    expect(await rootIsRendered(page)).toBe(true)
+    await page.getByRole('button', { name: 'More options for expression 2', exact: true }).click()
+    const item = page.getByRole('menuitem', { name: 'Table of values' })
+    if (await item.isEnabled()) await item.click()
+    await page.waitForTimeout(300)
+    expect(await rootIsRendered(page)).toBe(true)
+  })
+
+  test('an input over 500 characters shows an error', async ({ page }) => {
+    const long = 'x' + '+x'.repeat(250) // 501 characters, otherwise valid
+    expect(long.length).toBe(501)
+    await setExpression(page, 1, long)
+    const field = exprInput(page, 1)
+    await expect(field).toHaveAttribute('aria-invalid', 'true')
+    const describedBy = (await field.getAttribute('aria-describedby')) ?? ''
+    const errorId = describedBy.split(/\s+/).find((id) => /^expr-.+-error$/.test(id))
+    expect(errorId).toBeTruthy()
+    await expect(page.locator(`[id="${errorId}"]`)).not.toBeEmpty()
+  })
+
+  test('a render error is caught by an error boundary instead of blanking the page', async ({ page, pageErrors }) => {
+    // Inject a failure into number formatting, which the graph label uses while rendering.
+    await page.addInitScript(() => {
+      const original = Number.prototype.toPrecision
+      Number.prototype.toPrecision = function (this: number, p?: number) {
+        if ((window as unknown as { __boom?: boolean }).__boom) throw new Error('test-injected render error')
+        return original.call(this, p)
+      }
+    })
+    await page.reload()
+    await expect(exprInput(page, 1)).toBeVisible()
+    await page.evaluate(() => {
+      ;(window as unknown as { __boom?: boolean }).__boom = true
+    })
+    await exprInput(page, 2).fill('y = 2x')
+    await page.waitForTimeout(600)
+    await page.evaluate(() => {
+      ;(window as unknown as { __boom?: boolean }).__boom = false
+    })
+    expect(await rootIsRendered(page), '#root was emptied (no error boundary)').toBe(true)
+    // Either the app survived, or the boundary replaced it with a fallback offering a way out.
+    if (!(await exprInput(page, 1).isVisible())) {
+      await expect(page.getByRole('button', { name: /reset|reload|try again|start over/i }).first()).toBeVisible()
+    }
+    // The injected error is expected here; don't let the auto fixture fail on it.
+    pageErrors.splice(0, pageErrors.length)
+  })
+})
