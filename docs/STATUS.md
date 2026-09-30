@@ -19,6 +19,7 @@
 - Stashed as "frontend-dev WIP: fix round 2" (check `git stash list`; it was stash@{0} but index may shift):
   CR-01, 02 (boundary + table guard), 04, 06, 08-15, 17, 18, 20, 21, CR-05 sheet cap; UX-02, 03, 04, 05, 07, 11, 16, 19, 20, 22, 23, 24, 27.
   **8 persistence/App unit tests fail in the stash**; tests also need updating for new copy/labels.
+- When the stash lands, e2e needs: play button label is always "Animate a", placeholder "e.g. y = x^2".
 - Not started: UX-13, UX-14 (conflict with §3.1 exact microcopy: needs a spec amendment first).
 - Note: CR-03 keeps error-parse per keystroke (so §3 "clears immediately" holds); the 500-char cap bounds cost.
 
