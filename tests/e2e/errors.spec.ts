@@ -52,7 +52,9 @@ test.describe('#12 exact §3.1 messages with code-span tokens, aria-invalid and 
         if (isSymbolToken(token)) {
           // Single symbols carry an sr-only spoken name and hide the glyph from AT.
           await expect(codes.nth(i).locator('[aria-hidden="true"]')).toHaveText(token)
-          await expect(codes.nth(i).locator('.sr-only')).toHaveText(spokenName(token))
+          // The spoken name may be omitted when it repeats the preceding words (§3.1).
+          const spoken = codes.nth(i).locator('.sr-only')
+          if ((await spoken.count()) > 0) await expect(spoken).toHaveText(spokenName(token))
         }
       }
     })

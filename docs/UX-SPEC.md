@@ -133,6 +133,7 @@ arrays (`{ text } | { token }`), not strings with inline quotes. Render tokens a
   `<code><span aria-hidden="true">)</span><span className="sr-only">closing bracket</span></code>`.
   Names: `(` opening bracket, `)` closing bracket, `=` equals sign, `+` plus sign, `-` minus sign,
   `*` star, `/` slash, `^` caret, `,` comma, `**` double star. Any other symbol is read as "symbol" followed by the character.
+- Omit the sr-only name when it would only repeat the words just before the token (e.g. "Missing closing bracket `)`" is read "Missing closing bracket."); the glyph stays aria-hidden. (Team-lead decision.)
 - Live-region announcements (§9.2) use the spoken form, e.g. "Expression 2: Missing closing bracket."
 - The plain-text form (tests, `title`, logs) wraps tokens in straight double quotes: `Missing closing bracket ")".`
 
@@ -400,7 +401,7 @@ Expressions
 9. Backspace in an empty (non-only) row deletes it and focuses the end of the previous input.
 10. Up/Down arrows move between expression inputs.
 11. `2x`, `3sin(x)`, `x(x+1)`, `2pi` all plot as implicit multiplication.
-12. `sin(`, `y =`, `foo(x)`, `2 +`, `x = 3`, `a = 5` each show the exact §3.1 message, with tokens rendered as `<code>` spans (single symbols carrying an sr-only spoken name), no `·` or `…` characters, `aria-invalid="true"`, and `aria-describedby` pointing at it.
+12. `sin(`, `y =`, `foo(x)`, `2 +`, `x = 3`, `a = 5` each show the exact §3.1 message, with tokens rendered as `<code>` spans (single symbols carrying an sr-only spoken name unless it would repeat the preceding words), no `·` or `…` characters, `aria-invalid="true"`, and `aria-describedby` pointing at it.
 13. No input from §3.1 crashes the app or throws to the console as uncaught.
 14. Swatch toggle hides/shows the curve; hidden state is a hollow slashed ring; `aria-pressed` updates.
 15. Overflow menu offers Colour…, Table of values, Delete; it is non-modal, Escape closes it and focus returns to its trigger; Colour opens a keyboard-operable radiogroup of 7 colours.
