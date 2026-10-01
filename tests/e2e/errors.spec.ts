@@ -1,6 +1,12 @@
 // UX-SPEC §3 / §3.1 — acceptance checklist items 12 and 13, plus error announcements (§9.2).
+import { type Page } from '@playwright/test'
 import {
   ERROR_MESSAGES,
+  errorText,
+  errorTokens,
+  isSymbolToken,
+  spokenName,
+  visibleText,
   PALETTE,
   allExprInputs,
   countColourPixels,
@@ -12,24 +18,43 @@ import {
   test,
 } from '../fixtures/app.ts'
 
+const missingBracketError = (page: Page) =>
+  page.locator('[id^="expr-"][id$="-error"]').filter({ hasText: /^Missing closing bracket/ })
+
 test.beforeEach(async ({ page }) => {
   await openApp(page)
 })
 
-test.describe('#12 exact §3.1 messages with aria-invalid and aria-describedby', () => {
+test.describe('#12 exact §3.1 messages with code-span tokens, aria-invalid and aria-describedby', () => {
   for (const [input, message] of ERROR_MESSAGES) {
-    test(`${JSON.stringify(input)} → ${message}`, async ({ page }) => {
+    test(`${JSON.stringify(input)} → ${errorText(message)}`, async ({ page }) => {
       await setExpression(page, 1, input)
       const field = exprInput(page, 1)
       await expect(field).toHaveAttribute('aria-invalid', 'true')
-      await expect(field).toHaveAccessibleDescription(message)
 
       const describedBy = (await field.getAttribute('aria-describedby')) ?? ''
       const errorId = describedBy.split(/\s+/).find((id) => /^expr-.+-error$/.test(id))
       expect(errorId, `aria-describedby="${describedBy}" should reference expr-<id>-error`).toBeTruthy()
       const errorLine = page.locator(`[id="${errorId}"]`)
       await expect(errorLine).toBeVisible()
-      await expect(errorLine).toHaveText(message)
+
+      // Visible text matches the spec once the code-span markup is ignored.
+      await expect.poll(() => visibleText(errorLine)).toBe(errorText(message))
+      // Only characters a user can type.
+      expect(await errorLine.textContent()).not.toMatch(/[·…“”‘’]/)
+
+      // Each token is rendered inside a <code> element, in order.
+      const codes = errorLine.locator('code')
+      const tokens = errorTokens(message)
+      await expect(codes).toHaveCount(tokens.length)
+      for (const [i, token] of tokens.entries()) {
+        expect(await visibleText(codes.nth(i))).toBe(token)
+        if (isSymbolToken(token)) {
+          // Single symbols carry an sr-only spoken name and hide the glyph from AT.
+          await expect(codes.nth(i).locator('[aria-hidden="true"]')).toHaveText(token)
+          await expect(codes.nth(i).locator('.sr-only')).toHaveText(spokenName(token))
+        }
+      }
     })
   }
 })
@@ -40,7 +65,7 @@ test.describe('error timing (§3)', () => {
     await field.fill('')
     await field.pressSequentially('y = sin(', { delay: 30 })
     const typedAt = Date.now()
-    const error = page.getByText('Missing closing bracket ).', { exact: true })
+    const error = missingBracketError(page)
     await expect(error).toBeHidden()
     await expect(field).toBeFocused()
     await expect(error).toBeVisible({ timeout: 3000 })
@@ -51,7 +76,7 @@ test.describe('error timing (§3)', () => {
     const field = exprInput(page, 1)
     await field.fill('y = sin(')
     await field.blur()
-    await expect(page.getByText('Missing closing bracket ).', { exact: true })).toBeVisible({ timeout: 300 })
+    await expect(missingBracketError(page)).toBeVisible({ timeout: 300 })
   })
 
   test('error clears immediately when the text becomes valid', async ({ page }) => {
@@ -61,7 +86,7 @@ test.describe('error timing (§3)', () => {
     await field.focus()
     await page.keyboard.press('End')
     await page.keyboard.type('x)')
-    await expect(page.getByText('Missing closing bracket ).', { exact: true })).toBeHidden({ timeout: 400 })
+    await expect(missingBracketError(page)).toBeHidden({ timeout: 400 })
     await expect(field).not.toHaveAttribute('aria-invalid', 'true')
   })
 

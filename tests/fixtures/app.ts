@@ -17,21 +17,63 @@ export const EMPTY_GRAPH_HINT = 'Add an expression to see it graphed.'
 export const FOOTER_TIP = 'Tip: use a letter like a to make a slider.'
 export const LIVE_REGION_ID = 'app-live-region'
 
-/** UX-SPEC §3.1, verbatim. */
+/**
+ * UX-SPEC §3.1 (87a6731), verbatim, with tokens in backticks as in the spec's Message column.
+ * Tokens render as <code> spans; use `errorText()` for the visible text and `errorTokens()` for the tokens.
+ */
 export const ERROR_MESSAGES: ReadonlyArray<readonly [input: string, message: string]> = [
-  ['sin(', 'Missing closing bracket ).'],
-  ['sin(x))', 'Unexpected ) — there are more closing brackets than opening ones.'],
-  ['y =', 'Nothing after =. Type an expression, e.g. y = 2x + 1.'],
-  ['foo(x)', 'Unknown function "foo". Try sin, cos, tan, sqrt, abs, ln, log or exp.'],
-  ['2 +', 'Expression ends unexpectedly after +.'],
-  ['x = 3', 'Only y = … is supported. Write it as y = … or just the expression.'],
-  ['z = x', 'Only y = … is supported. Write it as y = … or just the expression.'],
-  ['sqrt()', 'sqrt needs a value, e.g. sqrt(x).'],
-  ['y = y + 1', "y can't appear on the right-hand side."],
-  ['2 ** x', 'Use ^ for powers, e.g. 2^x.'],
-  ['a = 5', 'Only y = … is supported. To make a slider, just use a in an expression, e.g. a·sin(x).'],
-  ['x $ 2', 'Couldn\'t understand this expression. Check for typos near "$".'],
+  ['sin(', 'Missing closing bracket `)`.'],
+  ['sin(x))', 'Unexpected `)` - there are more closing brackets than opening ones.'],
+  ['y =', 'Nothing after `=`. Type an expression, e.g. `y = 2x + 1`.'],
+  ['f(x) =', 'Nothing after `=`. Type an expression, e.g. `y = 2x + 1`.'],
+  ['foo(x)', 'Unknown function `foo`. Try `sin`, `cos`, `tan`, `sqrt`, `abs`, `ln`, `log` or `exp`.'],
+  ['SIN(x)', 'Unknown function `SIN`. Did you mean `sin`?'],
+  ['sin x', 'Add brackets: `sin(x)`.'],
+  ['2 +', 'Expression ends unexpectedly after `+`.'],
+  ['x = 3', 'Only `y` or `f(x)` equations can be graphed, e.g. `y = 3x` or `f(x) = 3x`.'],
+  ['z = x', 'Only `y` or `f(x)` equations can be graphed, e.g. `y = 3x` or `f(x) = 3x`.'],
+  ['a = 5', 'To make a slider, just use `a` in an expression, e.g. `y = a*sin(x)`.'],
+  ['e = 5', "`e` is a constant (about 2.718), so it can't be set. Use another letter for a slider, e.g. `a`."],
+  ['sqrt()', '`sqrt` needs a value, e.g. `sqrt(x)`.'],
+  ['y = y + 1', "`y` can't appear on the right-hand side."],
+  ['2 ** x', 'Use `^` for powers, e.g. `2^x`.'],
+  ['x $ 2', "Couldn't understand this expression. Check for typos near `$`."],
 ]
+
+/** Visible message text: the spec message without the backtick token markers. */
+export const errorText = (message: string) => message.replace(/`/g, '')
+
+/** Tokens (code spans) in a spec message, in order. */
+export const errorTokens = (message: string) => Array.from(message.matchAll(/`([^`]+)`/g), (m) => m[1])
+
+/** Spoken names for single-symbol tokens (§3.1). */
+export const SYMBOL_NAMES: Readonly<Record<string, string>> = {
+  '(': 'opening bracket',
+  ')': 'closing bracket',
+  '=': 'equals sign',
+  '+': 'plus sign',
+  '-': 'minus sign',
+  '*': 'star',
+  '/': 'slash',
+  '^': 'caret',
+  ',': 'comma',
+  '**': 'double star',
+}
+
+/** A symbol token is one with no letters or digits; others are read as written. */
+export const isSymbolToken = (t: string) => !/[A-Za-z0-9]/.test(t)
+
+/** Spoken name of a symbol token: its §3.1 name, or "symbol <char>". */
+export const spokenName = (t: string) => SYMBOL_NAMES[t] ?? `symbol ${t}`
+
+/** Text a sighted user sees: textContent minus .sr-only nodes, whitespace collapsed. */
+export async function visibleText(locator: Locator): Promise<string> {
+  return locator.evaluate((el) => {
+    const clone = el.cloneNode(true) as Element
+    clone.querySelectorAll('.sr-only').forEach((n) => n.remove())
+    return (clone.textContent ?? '').replace(/\s+/g, ' ').trim()
+  })
+}
 
 // ---- Fixtures ---------------------------------------------------------------
 
