@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react"
+import { memo, useEffect, useId, useRef, useState, type KeyboardEvent } from "react"
 import { AlertCircleIcon, MoreVerticalIcon, PaletteIcon, TableIcon, Trash2Icon } from "lucide-react"
 import { announce } from "@/lib/announce"
 import { paletteColor, type Theme } from "@/lib/palette"
@@ -14,15 +14,17 @@ import {
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Toggle } from "@/components/ui/toggle"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import type { ExpressionItem, ExpressionStatus, Parameter, Viewport } from "@/state/types"
+import type { AppActions } from "@/hooks/useAppStore"
+import { resolveParameter } from "@/state/derive"
+import type { ExpressionItem, ExpressionStatus, Parameter } from "@/state/types"
 import { ColorPicker } from "./ColorPicker"
+import { HintTooltip } from "./HintTooltip"
 import { ParameterSlider } from "./ParameterSlider"
-import { TableOfValuesDialog } from "./TableOfValuesDialog"
+import { TableOfValuesDialog, type TableContext } from "./TableOfValuesDialog"
 
 /** Error line appears after this long without typing (UX-SPEC §3). */
 export const ERROR_DELAY_MS = 600
-export const PLACEHOLDER = "Type an expression, e.g. y = x^2"
+export const PLACEHOLDER = "e.g. y = x^2"
 
 export type RowNavigation = "enter" | "backspace-empty" | "up" | "down"
 
@@ -34,40 +36,35 @@ export interface ExpressionRowProps {
   /** The always-present empty last row. */
   isTrailing: boolean
   theme: Theme
-  sliders: Parameter[]
+  /** Parameters whose slider this row shows (sorted). */
+  sliderNames: readonly string[]
+  parameters: Readonly<Record<string, Parameter>>
   playing: ReadonlySet<string>
-  params: Record<string, number>
-  viewport: Viewport | null
+  actions: AppActions
   registerInput: (id: string, el: HTMLInputElement | null) => void
-  onTextChange: (text: string) => void
-  onNavigate: (nav: RowNavigation) => void
-  onVisibleChange: (visible: boolean) => void
-  onColorChange: (colorIndex: number) => void
-  onDelete: () => void
-  onParameterChange: (name: string, patch: Partial<Omit<Parameter, "name">>) => void
+  onNavigate: (id: string, nav: RowNavigation) => void
+  onDelete: (id: string) => void
   onTogglePlay: (name: string) => void
-  onInputFocus?: (el: HTMLInputElement) => void
+  onInputFocus: (el: HTMLInputElement) => void
+  getTableContext: () => TableContext
 }
 
-export function ExpressionRow({
+function ExpressionRowImpl({
   item,
   index,
   status,
   isTrailing,
   theme,
-  sliders,
+  sliderNames,
+  parameters,
   playing,
-  params,
-  viewport,
+  actions,
   registerInput,
-  onTextChange,
   onNavigate,
-  onVisibleChange,
-  onColorChange,
   onDelete,
-  onParameterChange,
   onTogglePlay,
   onInputFocus,
+  getTableContext,
 }: ExpressionRowProps) {
   const [errorShown, setErrorShown] = useState(false)
   const [colorOpen, setColorOpen] = useState(false)
@@ -76,6 +73,9 @@ export function ExpressionRow({
   const menuTriggerRef = useRef<HTMLButtonElement>(null)
   /** Set when a menu item opens a popover/dialog so the menu doesn't steal focus back. */
   const suppressMenuFocus = useRef(false)
+  /** The last error message announced for this row: announce each error once (CR-10). */
+  const lastAnnounced = useRef<string | null>(null)
+  const colorHeadingId = useId()
 
   // Show the error only after typing pauses (or immediately on blur / Enter).
   useEffect(() => {
@@ -91,29 +91,32 @@ export function ExpressionRow({
 
   const revealError = () => {
     setErrorShown(true)
-    if (error) announce(`Expression ${index}: ${error.message}`)
+    if (error && lastAnnounced.current !== error.message) {
+      lastAnnounced.current = error.message
+      announce(`Expression ${index}: ${error.message}`)
+    }
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     switch (e.key) {
       case "Enter":
         e.preventDefault()
-        setErrorShown(true)
-        onNavigate("enter")
+        revealError()
+        onNavigate(item.id, "enter")
         break
       case "Backspace":
         if (e.currentTarget.value === "") {
           e.preventDefault()
-          onNavigate("backspace-empty")
+          onNavigate(item.id, "backspace-empty")
         }
         break
       case "ArrowUp":
         e.preventDefault()
-        onNavigate("up")
+        onNavigate(item.id, "up")
         break
       case "ArrowDown":
         e.preventDefault()
-        onNavigate("down")
+        onNavigate(item.id, "down")
         break
       case "Escape":
         e.preventDefault()
@@ -122,30 +125,35 @@ export function ExpressionRow({
     }
   }
 
+  const swatch = (
+    <Toggle
+      ref={swatchRef}
+      pressed={item.visible}
+      onPressedChange={(visible) => actions.setVisible(item.id, visible)}
+      disabled={isTrailing}
+      aria-label={`Show expression ${index}`}
+      className={cn(
+        "size-9 min-w-0 rounded-full p-0 aria-pressed:bg-transparent data-[state=on]:bg-transparent pointer-coarse:size-11",
+        // Solid ring: the 50%-alpha default is only ~2:1 (CR-06).
+        "focus-visible:ring-[3px] focus-visible:ring-ring disabled:opacity-100",
+      )}
+    >
+      <Swatch color={color} visible={item.visible} placeholder={isTrailing} />
+    </Toggle>
+  )
+
   return (
     <li className="flex items-start gap-2 px-2 py-2 hover:bg-muted/50 focus-within:bg-muted/50">
       <Popover open={colorOpen} onOpenChange={setColorOpen}>
         <PopoverAnchor asChild>
           <div className="shrink-0">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Toggle
-                  ref={swatchRef}
-                  pressed={item.visible}
-                  onPressedChange={onVisibleChange}
-                  aria-label={`Show expression ${index}`}
-                  className="size-9 min-w-0 rounded-full p-0 aria-pressed:bg-transparent data-[state=on]:bg-transparent pointer-coarse:size-11"
-                >
-                  <Swatch color={color} visible={item.visible} />
-                </Toggle>
-              </TooltipTrigger>
-              <TooltipContent>{item.visible ? "Hide" : "Show"}</TooltipContent>
-            </Tooltip>
+            {isTrailing ? swatch : <HintTooltip label={item.visible ? "Hide" : "Show"}>{swatch}</HintTooltip>}
           </div>
         </PopoverAnchor>
         <PopoverContent
           align="start"
           className="w-auto"
+          aria-labelledby={colorHeadingId}
           onOpenAutoFocus={(e) => {
             e.preventDefault()
             const checked = (e.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>('[aria-checked="true"]')
@@ -156,13 +164,15 @@ export function ExpressionRow({
             menuTriggerRef.current?.focus()
           }}
         >
-          <h2 className="text-sm font-medium">Curve colour</h2>
+          <h2 id={colorHeadingId} className="text-sm font-medium">
+            Curve colour
+          </h2>
           <ColorPicker
             value={item.colorIndex}
             theme={theme}
             index={index}
             onSelect={(i) => {
-              onColorChange(i)
+              actions.setColor(item.id, i)
               setColorOpen(false)
             }}
           />
@@ -171,7 +181,7 @@ export function ExpressionRow({
 
       <span
         aria-hidden
-        className="flex h-9 w-5 shrink-0 items-center justify-end text-xs text-muted-foreground tabular-nums pointer-coarse:h-11"
+        className="-ml-1 flex h-9 w-4 shrink-0 items-center justify-end text-xs text-muted-foreground tabular-nums max-sm:hidden pointer-coarse:h-11"
       >
         {index}
       </span>
@@ -183,30 +193,32 @@ export function ExpressionRow({
             value={item.text}
             onChange={(e) => {
               setErrorShown(false)
-              onTextChange(e.target.value)
+              lastAnnounced.current = null
+              actions.setText(item.id, e.target.value)
             }}
             onKeyDown={onKeyDown}
             onBlur={revealError}
-            onFocus={(e) => onInputFocus?.(e.currentTarget)}
+            onFocus={(e) => onInputFocus(e.currentTarget)}
             aria-label={`Expression ${index}`}
             aria-invalid={showError || undefined}
             aria-describedby={showError ? errorId : undefined}
             placeholder={isTrailing ? PLACEHOLDER : undefined}
-            className="h-9 font-mono text-sm pointer-coarse:h-11"
+            className={cn("h-9 font-mono text-sm pointer-coarse:h-11", !item.visible && "text-muted-foreground")}
             spellCheck={false}
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
             inputMode="text"
           />
-          <DropdownMenu>
+          {/* Non-modal so the rest of the page isn't aria-hidden while focus is in the menu (CR-14). */}
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 ref={menuTriggerRef}
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-9 shrink-0 pointer-coarse:size-11"
+                className={cn("size-9 shrink-0 pointer-coarse:size-11", isTrailing && "invisible")}
                 aria-label={`More options for expression ${index}`}
               >
                 <MoreVerticalIcon aria-hidden />
@@ -214,6 +226,7 @@ export function ExpressionRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
+              className="min-w-48"
               onCloseAutoFocus={(e) => {
                 if (suppressMenuFocus.current) {
                   suppressMenuFocus.current = false
@@ -222,6 +235,7 @@ export function ExpressionRow({
               }}
             >
               <DropdownMenuItem
+                className="whitespace-nowrap"
                 onSelect={() => {
                   suppressMenuFocus.current = true
                   // Open after the menu has closed so the two layers don't fight over focus.
@@ -232,6 +246,7 @@ export function ExpressionRow({
                 Colour…
               </DropdownMenuItem>
               <DropdownMenuItem
+                className="whitespace-nowrap"
                 disabled={!canTable}
                 onSelect={() => {
                   suppressMenuFocus.current = true
@@ -243,11 +258,12 @@ export function ExpressionRow({
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
+                className="whitespace-nowrap"
                 variant="destructive"
                 disabled={isTrailing}
                 onSelect={() => {
                   suppressMenuFocus.current = true
-                  onDelete()
+                  onDelete(item.id)
                 }}
               >
                 <Trash2Icon aria-hidden />
@@ -264,13 +280,14 @@ export function ExpressionRow({
           </p>
         )}
 
-        {sliders.map((p) => (
+        {sliderNames.map((name) => (
           <ParameterSlider
-            key={p.name}
-            parameter={p}
-            playing={playing.has(p.name)}
-            onChange={(patch) => onParameterChange(p.name, patch)}
-            onTogglePlay={() => onTogglePlay(p.name)}
+            key={name}
+            parameter={resolveParameter(parameters, name)}
+            playing={playing.has(name)}
+            color={color}
+            onChange={(patch) => actions.setParameter(name, patch)}
+            onTogglePlay={() => onTogglePlay(name)}
           />
         ))}
       </div>
@@ -280,8 +297,7 @@ export function ExpressionRow({
           open={tableOpen}
           onOpenChange={setTableOpen}
           expression={status.compiled}
-          params={params}
-          viewport={viewport}
+          getContext={getTableContext}
           returnFocusTo={() => menuTriggerRef.current}
         />
       )}
@@ -289,12 +305,38 @@ export function ExpressionRow({
   )
 }
 
-/** Filled circle when visible; hollow ring with a slash when hidden (not colour alone). */
-function Swatch({ color, visible }: { color: string; visible: boolean }) {
+function sameNames(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((n, i) => n === b[i])
+}
+
+/**
+ * Rows re-render only when something they show changes (CR-15): not on pan,
+ * and during slider animation only the row owning the animated slider.
+ */
+function rowPropsEqual(prev: ExpressionRowProps, next: ExpressionRowProps): boolean {
+  for (const key of Object.keys(next) as (keyof ExpressionRowProps)[]) {
+    if (key === "parameters" || key === "status" || key === "sliderNames") continue
+    if (prev[key] !== next[key]) return false
+  }
+  if (prev.status.compiled !== next.status.compiled || prev.status.error !== next.status.error) return false
+  if (!sameNames(prev.sliderNames, next.sliderNames)) return false
+  return next.sliderNames.every((n) => prev.parameters[n] === next.parameters[n])
+}
+
+export const ExpressionRow = memo(ExpressionRowImpl, rowPropsEqual)
+
+/**
+ * Filled circle when visible; hollow ring with a slash when hidden (not colour alone).
+ * The trailing empty row gets a dashed neutral ring (UX-11).
+ */
+function Swatch({ color, visible, placeholder }: { color: string; visible: boolean; placeholder: boolean }) {
+  if (placeholder) {
+    return <span aria-hidden className="block size-6 rounded-full border-2 border-dashed border-muted-foreground/40" />
+  }
   return (
     <span
       aria-hidden
-      className={cn("relative block size-6 rounded-full border-2", !visible && "bg-transparent")}
+      className="relative block size-6 rounded-full border-2"
       style={{ borderColor: color, backgroundColor: visible ? color : "transparent" }}
     >
       {!visible && (

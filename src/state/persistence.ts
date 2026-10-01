@@ -1,7 +1,7 @@
 // localStorage persistence (UX-SPEC §6, §13.37). Every access is wrapped in
 // try/catch; anything invalid falls back to first-run defaults silently.
 import { PALETTE } from "@/lib/palette"
-import { isValidViewport } from "@/lib/viewport"
+import { MAX_SPAN, MIN_SPAN, isValidViewport, spanX } from "@/lib/viewport"
 import { ensureTrailingRow, firstRunState, type AppState } from "./model"
 import type { ExpressionItem, Parameter, Theme } from "./types"
 
@@ -22,10 +22,23 @@ interface StoredState {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null
 const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v)
 
+/** Ids end up in DOM ids and aria-describedby, so keep them to safe characters (CR-18). */
+const ID_PATTERN = /^[\w-]{1,64}$/
+/** Parameters are single letters (UX-SPEC §4); this also rules out "__proto__" etc. */
+const PARAM_NAME_PATTERN = /^[A-Za-zͰ-Ͽ]$/
+
+function validViewport(v: unknown): AppState["viewport"] {
+  if (!isValidViewport(v)) return null
+  const span = spanX(v)
+  return span >= MIN_SPAN && span <= MAX_SPAN ? v : null
+}
+
 function validItem(v: unknown): ExpressionItem | null {
   if (!isObject(v)) return null
   const { id, text, colorIndex, visible } = v
-  if (typeof id !== "string" || id === "" || typeof text !== "string" || typeof visible !== "boolean") return null
+  if (typeof id !== "string" || !ID_PATTERN.test(id) || typeof text !== "string" || typeof visible !== "boolean") {
+    return null
+  }
   if (!Number.isInteger(colorIndex) || (colorIndex as number) < 0) return null
   return { id, text, colorIndex: (colorIndex as number) % PALETTE.length, visible }
 }
@@ -64,6 +77,7 @@ export function deserialize(raw: string | null, systemTheme: Theme): AppState | 
   const parameters: Record<string, Parameter> = {}
   if (isObject(data.parameters)) {
     for (const [name, v] of Object.entries(data.parameters)) {
+      if (!PARAM_NAME_PATTERN.test(name)) continue
       const p = validParameter(name, v)
       if (p) parameters[name] = p
     }
@@ -78,7 +92,7 @@ export function deserialize(raw: string | null, systemTheme: Theme): AppState | 
   return ensureTrailingRow({
     expressions,
     parameters,
-    viewport: isValidViewport(data.viewport) ? data.viewport : null,
+    viewport: validViewport(data.viewport),
     theme: storedTheme ?? systemTheme,
     themeExplicit: storedTheme !== null,
     panelCollapsed: data.panelCollapsed === true,

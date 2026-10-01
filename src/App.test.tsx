@@ -59,7 +59,7 @@ describe("App shell", () => {
     expect(screen.getByRole("list", { name: "Expression list" })).toBeInTheDocument()
     expect(input(1)).toHaveValue("y = sin(x)")
     expect(input(2)).toHaveValue("")
-    expect(input(2)).toHaveAttribute("placeholder", "Type an expression, e.g. y = x^2")
+    expect(input(2)).toHaveAttribute("placeholder", "e.g. y = x^2")
     expect(input(1)).not.toHaveAttribute("placeholder")
     expect(screen.getByText("Tip: use a letter like a to make a slider.")).toBeInTheDocument()
     const region = liveRegion()
@@ -288,7 +288,7 @@ describe("row controls", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Delete" }))
     await waitForPlots(0)
     expect(screen.getAllByRole("textbox")).toHaveLength(1)
-    expect(input(1)).toHaveAttribute("placeholder", "Type an expression, e.g. y = x^2")
+    expect(input(1)).toHaveAttribute("placeholder", "e.g. y = x^2")
   })
 
   it("Add expression focuses the trailing empty row", async () => {
@@ -296,6 +296,55 @@ describe("row controls", () => {
     render(<App />)
     await user.click(screen.getByRole("button", { name: "Add expression" }))
     expect(input(2)).toHaveFocus()
+  })
+})
+
+describe("review round 2", () => {
+  it("puts the h1 inside the main landmark (CR-13)", () => {
+    render(<App />)
+    const main = screen.getByRole("main", { name: "Graph" })
+    expect(within(main).getByRole("heading", { level: 1 })).toBeInTheDocument()
+  })
+
+  it("names the colour popover (CR-04)", async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole("button", { name: "More options for expression 1" }))
+    await user.click(await screen.findByRole("menuitem", { name: "Colour…" }))
+    expect(await screen.findByRole("dialog", { name: "Curve colour" })).toBeInTheDocument()
+  })
+
+  it("names the slider settings popover (CR-04)", async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.clear(input(1))
+    await user.type(input(1), "a x")
+    await user.click(await screen.findByRole("button", { name: "Slider settings for a" }))
+    expect(await screen.findByRole("dialog", { name: "Slider settings for a" })).toBeInTheDocument()
+  })
+
+  it("announces deletion via Backspace on an empty row (CR-09)", async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(input(2), "x")
+    await user.click(input(1))
+    await user.keyboard("{Enter}") // new empty row 2
+    await user.keyboard("{Backspace}")
+    await waitFor(() => expect(liveRegion()).toHaveTextContent("Expression 2 deleted."))
+  })
+
+  it("announces an unchanged error only once across blurs (CR-10)", async () => {
+    const announce = await import("@/lib/announce")
+    const spy = vi.spyOn(announce, "announce")
+    const user = userEvent.setup()
+    render(<App />)
+    await user.clear(input(1))
+    await user.type(input(1), "sin(")
+    await user.tab()
+    await user.click(input(1))
+    await user.tab()
+    const errorCalls = spy.mock.calls.filter(([m]) => m.startsWith("Expression 1:"))
+    expect(errorCalls).toHaveLength(1)
   })
 })
 
@@ -344,11 +393,18 @@ describe("table of values (§7)", () => {
     expect(firstRowCells().map((c) => c.textContent)).toEqual(["4", "2"])
   })
 
-  it("is disabled for invalid or empty expressions", async () => {
+  it("is disabled for invalid expressions", async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole("button", { name: "More options for expression 2" }))
+    await user.type(input(1), " +")
+    await user.click(screen.getByRole("button", { name: "More options for expression 1" }))
     expect(await screen.findByRole("menuitem", { name: "Table of values" })).toHaveAttribute("data-disabled")
+  })
+
+  it("the trailing empty row is a placeholder: swatch disabled (UX-11)", () => {
+    render(<App />)
+    expect(screen.getByRole("button", { name: "Show expression 2" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Show expression 1" })).toBeEnabled()
   })
 })
 
@@ -403,17 +459,32 @@ describe("sliders (§4)", () => {
     expect(min).toHaveValue("-10")
   })
 
-  it("play toggles to Pause and announces", async () => {
+  it("play keeps a constant label and toggles aria-pressed (CR-20), announcing start and pause", async () => {
     const { user } = await renderWithSlider()
-    await user.click(screen.getByRole("button", { name: "Animate a" }))
-    const pause = screen.getByRole("button", { name: "Pause a" })
-    expect(pause).toHaveAttribute("aria-pressed", "true")
+    const play = screen.getByRole("button", { name: "Animate a" })
+    await user.click(play)
+    expect(play).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByRole("button", { name: "Pause a" })).not.toBeInTheDocument()
     await waitFor(() => expect(liveRegion()).toHaveTextContent("Animating a"))
     // The value moves while playing.
     await waitFor(() => expect(graph.props!.params.a).not.toBe(1), { timeout: 1500 })
-    await user.click(pause)
-    expect(screen.getByRole("button", { name: "Animate a" })).toBeInTheDocument()
+    await user.click(play)
+    expect(play).toHaveAttribute("aria-pressed", "false")
     await waitFor(() => expect(liveRegion()).toHaveTextContent(/^Paused a = -?\d+\.\d$/), { timeout: 1500 })
+  })
+
+  it("stops animating when the slider disappears, and does not resume when it returns (CR-01)", async () => {
+    const { user } = await renderWithSlider()
+    await user.click(screen.getByRole("button", { name: "Animate a" }))
+    await waitFor(() => expect(graph.props!.params.a).not.toBe(1), { timeout: 1500 })
+    await user.clear(input(1))
+    await user.type(input(1), "sin(x)")
+    await waitFor(() => expect(screen.queryByRole("slider", { name: "a" })).not.toBeInTheDocument())
+    await waitFor(() => expect(liveRegion()).toHaveTextContent(/^Paused a = /), { timeout: 1500 })
+    await user.clear(input(1))
+    await user.type(input(1), "a*sin(x)")
+    const play = await screen.findByRole("button", { name: "Animate a" })
+    expect(play).toHaveAttribute("aria-pressed", "false")
   })
 
   it("shares one slider between expressions using the same name", async () => {

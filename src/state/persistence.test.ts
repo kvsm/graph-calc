@@ -94,3 +94,32 @@ describe("persistence", () => {
     expect(loadState("light").expressions[0].text).toBe("x^3")
   })
 })
+
+describe("persistence hardening (CR-18)", () => {
+  const base = { version: 1, expressions: [{ id: "ok_1-a", text: "x", colorIndex: 0, visible: true }] }
+
+  it("rejects unsafe expression ids", () => {
+    const raw = JSON.stringify({
+      ...base,
+      expressions: [...base.expressions, { id: "has space", text: "x^2", colorIndex: 0, visible: true }],
+    })
+    expect(deserialize(raw, "light")!.expressions.map((e) => e.id)).toContain("ok_1-a")
+    expect(deserialize(raw, "light")!.expressions.map((e) => e.text)).toEqual(["x", ""])
+  })
+
+  it("accepts only single-letter parameter names", () => {
+    const p = { value: 1, min: 0, max: 2, step: 0.1 }
+    const raw = `{"version":1,"expressions":${JSON.stringify(base.expressions)},"parameters":{"a":${JSON.stringify(p)},"__proto__":${JSON.stringify(p)},"ab":${JSON.stringify(p)}}}`
+    const s = deserialize(raw, "light")!
+    expect(Object.keys(s.parameters)).toEqual(["a"])
+    expect(Object.getPrototypeOf(s.parameters)).toBe(Object.prototype)
+  })
+
+  it("rejects viewports outside the zoom limits", () => {
+    const tooBig = { xMin: -1e7, xMax: 1e7, yMin: -1, yMax: 1 }
+    const tooSmall = { xMin: 0, xMax: 1e-9, yMin: 0, yMax: 1 }
+    for (const viewport of [tooBig, tooSmall]) {
+      expect(deserialize(JSON.stringify({ ...base, viewport }), "light")!.viewport).toBeNull()
+    }
+  })
+})

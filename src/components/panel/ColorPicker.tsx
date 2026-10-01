@@ -52,7 +52,7 @@ export function ColorPicker({ value, theme, index, onSelect }: ColorPickerProps)
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
               "flex size-8 items-center justify-center rounded-full outline-none pointer-coarse:size-11",
-              "focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "focus-visible:ring-[3px] focus-visible:ring-ring",
               checked && "ring-2 ring-foreground",
             )}
           >

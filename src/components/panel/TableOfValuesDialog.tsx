@@ -9,29 +9,42 @@ import type { Viewport } from "@/state/types"
 import { NumberField } from "./NumberField"
 import { tableDefaults, tableXs } from "./tableValues"
 
+export interface TableContext {
+  params: Record<string, number>
+  viewport: Viewport | null
+}
+
 interface TableOfValuesDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   expression: CompiledExpression
-  params: Record<string, number>
-  viewport: Viewport | null
+  /** Read once when the dialog opens (so rows don't re-render on every pan; CR-15). */
+  getContext: () => TableContext
   /** Where focus returns on close (the row's overflow trigger). */
   returnFocusTo: () => HTMLElement | null
+}
+
+/** Never let a bad evaluation take down the dialog (CR-02). */
+function safeEvaluate(expression: CompiledExpression, x: number, params: Record<string, number>): number {
+  try {
+    return expression.evaluate(x, params)
+  } catch {
+    return NaN
+  }
 }
 
 export function TableOfValuesDialog({
   open,
   onOpenChange,
   expression,
-  params,
-  viewport,
+  getContext,
   returnFocusTo,
 }: TableOfValuesDialogProps) {
   const label = expression.source.trim()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[80dvh] flex-col sm:max-w-md"
+        className="flex max-h-[80dvh] flex-col sm:max-w-sm"
         onCloseAutoFocus={(e) => {
           const target = returnFocusTo()
           if (target) {
@@ -40,11 +53,13 @@ export function TableOfValuesDialog({
           }
         }}
       >
-        <DialogTitle className="pr-8 break-words">Table of values: {label}</DialogTitle>
+        <DialogTitle className="pr-8 break-words">
+          Table of values: <span className="font-mono">{label}</span>
+        </DialogTitle>
         <DialogDescription className="sr-only">
           Values of {label} for 21 values of x. Change Start and Step to move the table.
         </DialogDescription>
-        {open && <TableBodyContent label={label} expression={expression} params={params} viewport={viewport} />}
+        {open && <TableBodyContent label={label} expression={expression} getContext={getContext} />}
       </DialogContent>
     </Dialog>
   )
@@ -53,22 +68,21 @@ export function TableOfValuesDialog({
 function TableBodyContent({
   label,
   expression,
-  params,
-  viewport,
+  getContext,
 }: {
   label: string
   expression: CompiledExpression
-  params: Record<string, number>
-  viewport: Viewport | null
+  getContext: () => TableContext
 }) {
-  const [defaults] = useState(() => tableDefaults(viewport))
+  const [context] = useState(getContext)
+  const [defaults] = useState(() => tableDefaults(context.viewport))
   const [start, setStart] = useState(defaults.start)
   const [step, setStep] = useState(defaults.step)
   const id = useId()
 
   const rows = useMemo(
-    () => tableXs(start, step).map((x) => ({ x, y: expression.evaluate(x, params) })),
-    [start, step, expression, params],
+    () => tableXs(start, step).map((x) => ({ x, y: safeEvaluate(expression, x, context.params) })),
+    [start, step, expression, context],
   )
 
   return (
@@ -99,21 +113,21 @@ function TableBodyContent({
           />
         </div>
       </div>
-      {/* Scrollable region must be keyboard-focusable (axe scrollable-region-focusable). */}
       <div
-        className="min-h-0 flex-1 overflow-y-auto rounded-md border"
+        className="min-h-0 flex-1 overflow-y-auto rounded-md border outline-none focus-visible:outline-2 focus-visible:outline-ring"
+        // Scrollable region must be keyboard-focusable (axe scrollable-region-focusable).
         // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
         tabIndex={0}
         role="region"
         aria-label={`Values of ${label}`}
       >
-        <Table>
+        <Table className="table-fixed">
           <TableCaption className="sr-only">
             Values of {label} from x = {formatNumber(start, 10)} in steps of {formatNumber(step, 10)}
           </TableCaption>
           <TableHeader>
             <TableRow>
-              <TableHead scope="col" className="text-right">
+              <TableHead scope="col" className="w-1/3 pr-6 text-right">
                 x
               </TableHead>
               <TableHead scope="col" className="text-right">
@@ -124,7 +138,7 @@ function TableBodyContent({
           <TableBody>
             {rows.map(({ x, y }, i) => (
               <TableRow key={i}>
-                <TableCell className="text-right font-mono tabular-nums">{formatNumber(x, 10)}</TableCell>
+                <TableCell className="w-1/3 pr-6 text-right font-mono tabular-nums">{formatNumber(x, 10)}</TableCell>
                 <TableCell className="text-right font-mono tabular-nums">{formatNumber(y)}</TableCell>
               </TableRow>
             ))}
