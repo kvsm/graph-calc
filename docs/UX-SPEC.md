@@ -122,21 +122,36 @@ Hover state on the whole row: `hover:bg-muted/50`. The row containing focus: `fo
 | Constant `y = 3` | Valid: horizontal line. |
 
 ### 3.1 Error messages (exact microcopy)
-Messages are sentence case, no trailing full stop if a fragment, name the problem and hint the fix.
+Messages are sentence case, name the problem and hint the fix. They contain only characters a user
+can type (no `·`, `…` or curly quotes in anything the user might copy).
+
+**Tokens.** Each `code` span in the Message column is a *token segment*. Build messages as segment
+arrays (`{ text } | { token }`), not strings with inline quotes. Render tokens as
+`<code className="rounded bg-muted px-1 font-mono text-[0.95em]">`, with no surrounding quotes.
+- Word tokens (`sin`, `foo`, `a`, `y = 2x + 1`) are read as written.
+- Single-symbol tokens also get a spoken name so screen readers don't skip them:
+  `<code><span aria-hidden="true">)</span><span className="sr-only">closing bracket</span></code>`.
+  Names: `(` opening bracket, `)` closing bracket, `=` equals sign, `+` plus sign, `-` minus sign,
+  `*` star, `/` slash, `^` caret, `,` comma, `**` double star. Any other symbol is read as "symbol" followed by the character.
+- Live-region announcements (§9.2) use the spoken form, e.g. "Expression 2: Missing closing bracket."
+- The plain-text form (tests, `title`, logs) wraps tokens in straight double quotes: `Missing closing bracket ")".`
 
 | Input | Message |
 |---|---|
 | `sin(` | Missing closing bracket `)`. |
-| `sin(x))` | Unexpected `)` — there are more closing brackets than opening ones. |
-| `y =` | Nothing after `=`. Type an expression, e.g. y = 2x + 1. |
-| `foo(x)` | Unknown function "foo". Try sin, cos, tan, sqrt, abs, ln, log or exp. |
+| `sin(x))` | Unexpected `)` - there are more closing brackets than opening ones. |
+| `y =`, `f(x) =` | Nothing after `=`. Type an expression, e.g. `y = 2x + 1`. |
+| `foo(x)` | Unknown function `foo`. Try `sin`, `cos`, `tan`, `sqrt`, `abs`, `ln`, `log` or `exp`. |
+| `SIN(x)` (known name, wrong case) | Unknown function `SIN`. Did you mean `sin`? |
+| `sin x` | Add brackets: `sin(x)`. |
 | `2 +` | Expression ends unexpectedly after `+`. |
-| `x = 3` / `z = x` | Only y = … is supported. Write it as y = … or just the expression. |
-| `sqrt()` | sqrt needs a value, e.g. sqrt(x). |
-| `y = y + 1` | y can't appear on the right-hand side. |
-| `2 ** x` | Use ^ for powers, e.g. 2^x. |
-| `a = 5` (assignment attempt) | Only y = … is supported. To make a slider, just use a in an expression, e.g. a·sin(x). |
-| anything else the parser rejects | Couldn't understand this expression. Check for typos near "<token>". |
+| `x = 3`, `z = x` | Only `y` or `f(x)` equations can be graphed, e.g. `y = 3x` or `f(x) = 3x`. |
+| `a = 5` (assignment attempt) | To make a slider, just use `a` in an expression, e.g. `y = a*sin(x)`. |
+| `e = 5` | `e` is a constant (about 2.718), so it can't be set. Use another letter for a slider, e.g. `a`. |
+| `sqrt()` | `sqrt` needs a value, e.g. `sqrt(x)`. |
+| `y = y + 1` | `y` can't appear on the right-hand side. |
+| `2 ** x` | Use `^` for powers, e.g. `2^x`. |
+| anything else the parser rejects | Couldn't understand this expression. Check for typos near `<token>`. |
 
 Evaluation-time non-finite values (e.g. `sqrt(x)` for x<0, `1/0`) are **not** errors — they are
 gaps in the curve.
@@ -385,7 +400,7 @@ Expressions
 9. Backspace in an empty (non-only) row deletes it and focuses the end of the previous input.
 10. Up/Down arrows move between expression inputs.
 11. `2x`, `3sin(x)`, `x(x+1)`, `2pi` all plot as implicit multiplication.
-12. `sin(`, `y =`, `foo(x)`, `2 +`, `x = 3` each show the exact §3.1 message, with `aria-invalid="true"` and `aria-describedby` pointing at it.
+12. `sin(`, `y =`, `foo(x)`, `2 +`, `x = 3`, `a = 5` each show the exact §3.1 message, with tokens rendered as `<code>` spans (single symbols carrying an sr-only spoken name), no `·` or `…` characters, `aria-invalid="true"`, and `aria-describedby` pointing at it.
 13. No input from §3.1 crashes the app or throws to the console as uncaught.
 14. Swatch toggle hides/shows the curve; hidden state is a hollow slashed ring; `aria-pressed` updates.
 15. Overflow menu offers Colour…, Table of values, Delete; it is non-modal, Escape closes it and focus returns to its trigger; Colour opens a keyboard-operable radiogroup of 7 colours.
