@@ -210,23 +210,33 @@ export const EMPTY_HINT_SIZE: Size = { width: 300, height: 30 }
  * larger region above/below the x-axis (clear of its labels) and, where it fits,
  * beside the y-axis (clear of its labels), so it never sits on an axis line.
  */
-export function emptyHintPosition(vp: Viewport, size: Size, insetBottom = 0, hint: Size = EMPTY_HINT_SIZE): Vec2 {
+export function emptyHintPosition(
+  vp: Viewport,
+  size: Size,
+  insetBottom = 0,
+  hint: Size = EMPTY_HINT_SIZE,
+  insetTop = 0,
+): Vec2 | null {
   const usable = usableSize(size, insetBottom)
   const w = usable.width
   const h = usable.height
   const ax = toScreenY(vp, size, 0)
   const ay = toScreenX(vp, size, 0)
   const margin = 8
-  // Vertical: regions above the axis and below its label row.
-  let y = h / 3
-  if (ax >= 0 && ax <= h) {
-    const aboveBottom = ax - margin
-    const belowTop = ax + LABEL_GAP + LABEL_HEIGHT + margin
-    const above = aboveBottom
-    const below = h - belowTop
-    y = above >= below ? aboveBottom / 2 : belowTop + below / 2
+  // The band the pill may occupy: below the top inset (phone toolbar row, N1), above the sheet.
+  const bandTop = Math.max(0, insetTop) + margin
+  const bandBottom = h - margin
+  if (bandBottom - bandTop < hint.height) return null
+  const fits = (top: number, bottom: number) => bottom - top >= hint.height
+  // Vertical: prefer the larger region above the axis or below its label row, if it fits.
+  let y = bandTop + (bandBottom - bandTop) / 3
+  if (ax >= bandTop && ax <= bandBottom) {
+    const above: [number, number] = [bandTop, ax - margin]
+    const below: [number, number] = [ax + LABEL_GAP + LABEL_HEIGHT + margin, bandBottom]
+    const regions = [above, below].filter(([t, b]) => fits(t, b)).sort((a, b) => b[1] - b[0] - (a[1] - a[0]))
+    if (regions.length > 0) y = (regions[0][0] + regions[0][1]) / 2
   }
-  y = clamp(y, hint.height / 2 + margin, Math.max(hint.height / 2 + margin, h - hint.height / 2 - margin))
+  y = clamp(y, bandTop + hint.height / 2, bandBottom - hint.height / 2)
   // Horizontal: beside the y-axis and its labels (about 40px to its left) where there is room.
   let x = w / 2
   if (ay >= 0 && ay <= w) {

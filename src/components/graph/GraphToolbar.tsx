@@ -86,7 +86,7 @@ export function GraphToolbar(props: GraphToolbarProps) {
       aria-label="Graph controls"
       aria-orientation={phone ? "horizontal" : "vertical"}
       onKeyDown={rovingKeyDown(phone)}
-      className="absolute top-3 right-3 flex flex-col gap-1 rounded-lg border bg-background/90 p-1 shadow-sm max-sm:flex-row"
+      className="absolute top-3 right-3 flex flex-col gap-1 rounded-lg border bg-background/90 p-1 shadow-sm max-sm:flex-row max-sm:bg-background"
     >
       <ToolButton label="Zoom in" tooltip="Zoom in (+)" tooltipSide={side} onClick={props.onZoomIn} unavailable={!props.canZoomIn}>
         <ZoomIn aria-hidden="true" />

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { defaultViewport } from "@/lib/viewport"
 import { FALLBACK_COLORS, readGraphColors, resolveGraphColors } from "./colors"
-import { CURVE_WIDTH, drawGraph, MARKER_RADIUS, TRACED_CURVE_WIDTH, type Ctx2D } from "./draw"
+import { CURVE_WIDTH, drawGraph, LABEL_HALO_WIDTH, MARKER_RADIUS, TRACED_CURVE_WIDTH, type Ctx2D } from "./draw"
 import { tooltipPosition } from "./tooltip"
 
 describe("tooltipPosition", () => {
@@ -125,5 +125,30 @@ describe("drawGraph", () => {
     drawGraph(ctx, { size, dpr: 1, viewport: vp, colors, curves: [], marker: { x: 1, y: NaN, color: "#000" } })
     drawGraph(ctx, { size, dpr: 1, viewport: vp, colors, curves: [], marker: { x: 100, y: 0, color: "#000" } })
     expect(calls.some((c) => c.name === "arc")).toBe(false)
+  })
+})
+
+describe("tick label halo (N3)", () => {
+  it("strokes each label in the background colour before filling it, after the curves", () => {
+    const { ctx, calls } = fakeCtx()
+    const size = { width: 800, height: 600 }
+    drawGraph(ctx, {
+      size,
+      dpr: 1,
+      viewport: defaultViewport(size),
+      colors: FALLBACK_COLORS.dark,
+      curves: [{ color: "#56B4E9", width: 2.5, segments: [[{ x: -10, y: 0 }, { x: 10, y: 0 }]] }],
+    })
+    const names = calls.map((c) => c.name)
+    const lastCurveStroke = calls.findIndex((c) => c.name === "stroke" && c.state.strokeStyle === "#56B4E9")
+    const firstStrokeText = names.indexOf("strokeText")
+    expect(firstStrokeText).toBeGreaterThan(lastCurveStroke)
+    const strokes = calls.filter((c) => c.name === "strokeText")
+    const fills = calls.filter((c) => c.name === "fillText")
+    expect(strokes.length).toBe(fills.length)
+    expect(strokes[0].state.strokeStyle).toBe("#0A0A0A")
+    expect(strokes[0].state.lineWidth).toBe(LABEL_HALO_WIDTH)
+    expect(names[firstStrokeText + 1]).toBe("fillText")
+    expect(fills[0].state.fillStyle).toBe("#A3A3A3")
   })
 })

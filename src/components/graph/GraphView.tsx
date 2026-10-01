@@ -33,6 +33,7 @@ import {
   type Tap,
 } from "./gestures"
 import { GraphToolbar } from "./GraphToolbar"
+import { PHONE_TOOLBAR_BOTTOM_PX, useIsPhone } from "./useIsPhone"
 import { graphKeyAction } from "./keyboard"
 import { graphAriaLabel, traceAnnouncement, truncate, viewAnnouncement } from "./label"
 import { effectiveViewport, emptyHintPosition, shiftBy, usableSize, visibleRect } from "./layout"
@@ -98,6 +99,7 @@ export function GraphView({
   const [trace, setTrace] = useState<TraceState | null>(null)
   const [dragging, setDragging] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const phone = useIsPhone()
   // Radix returns focus to a DialogTrigger; we open from two places, so remember the opener.
   const helpReturnFocus = useRef<HTMLElement | null>(null)
   const openHelp = useCallback(() => {
@@ -552,7 +554,10 @@ export function GraphView({
   })
 
   const ariaLabel = useMemo(() => graphAriaLabel(visible.map((p) => p.label), rect), [visible, rect])
-  const hintAt = plots.length === 0 && hasSize ? emptyHintPosition(vp, size, insetBottom) : null
+  const hintAt =
+    plots.length === 0 && hasSize
+      ? emptyHintPosition(vp, size, insetBottom, undefined, phone ? PHONE_TOOLBAR_BOTTOM_PX : 0)
+      : null
 
   return (
     <div className="relative size-full overflow-hidden" data-slot="graph">

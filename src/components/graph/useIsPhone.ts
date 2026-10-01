@@ -16,3 +16,9 @@ const snapshot = () =>
 export function useIsPhone(): boolean {
   return useSyncExternalStore(subscribe, snapshot, () => false)
 }
+
+/**
+ * Bottom edge (px from the graph top) of the horizontal phone toolbar row:
+ * top-3 (12) + border (1) + p-1 (4) + 44px buttons + p-1 (4) + border (1).
+ */
+export const PHONE_TOOLBAR_BOTTOM_PX = 66

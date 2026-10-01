@@ -255,11 +255,11 @@ describe("bottom inset (UX-04)", () => {
 })
 
 describe("emptyHintPosition (UX-01)", () => {
-  const box = (p: { x: number; y: number }) => ({
-    left: p.x - EMPTY_HINT_SIZE.width / 2,
-    right: p.x + EMPTY_HINT_SIZE.width / 2,
-    top: p.y - EMPTY_HINT_SIZE.height / 2,
-    bottom: p.y + EMPTY_HINT_SIZE.height / 2,
+  const box = (p: { x: number; y: number } | null) => ({
+    left: p!.x - EMPTY_HINT_SIZE.width / 2,
+    right: p!.x + EMPTY_HINT_SIZE.width / 2,
+    top: p!.y - EMPTY_HINT_SIZE.height / 2,
+    bottom: p!.y + EMPTY_HINT_SIZE.height / 2,
   })
 
   it("avoids both axes on a desktop-size default view", () => {
@@ -289,5 +289,33 @@ describe("emptyHintPosition (UX-01)", () => {
     const l = computeGridLayout(vp, s)
     const b = box(emptyHintPosition(vp, s))
     expect(b.top).toBeGreaterThan(l.xAxis! + LABEL_HEIGHT)
+  })
+})
+
+describe("emptyHintPosition with a top inset (N1)", () => {
+  const phone = { width: 375, height: 812 }
+  const half = EMPTY_HINT_SIZE.height / 2
+
+  it("stays below the phone toolbar row with the sheet expanded", () => {
+    const inset = 690 // expanded sheet: ~122px of graph left
+    const vp = defaultViewportInset(phone, inset)
+    const p = emptyHintPosition(vp, phone, inset, EMPTY_HINT_SIZE, 66)
+    expect(p).not.toBeNull()
+    expect(p!.y - half).toBeGreaterThanOrEqual(66)
+    expect(p!.y + half).toBeLessThanOrEqual(812 - inset)
+  })
+
+  it("is hidden when the band between toolbar and sheet is too small", () => {
+    const inset = 730
+    const vp = defaultViewportInset(phone, inset)
+    expect(emptyHintPosition(vp, phone, inset, EMPTY_HINT_SIZE, 66)).toBeNull()
+  })
+
+  it("keeps the peek-sheet placement below the toolbar too", () => {
+    const inset = 284
+    const vp = defaultViewportInset(phone, inset)
+    const p = emptyHintPosition(vp, phone, inset, EMPTY_HINT_SIZE, 66)!
+    expect(p.y - half).toBeGreaterThanOrEqual(66)
+    expect(p.y + half).toBeLessThanOrEqual(812 - inset)
   })
 })

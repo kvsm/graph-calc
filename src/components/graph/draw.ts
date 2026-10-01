@@ -10,6 +10,8 @@ export const TRACED_CURVE_WIDTH = 3
 /** Trace marker: 8px circle with a 2px ring in the background colour (§5.3). */
 export const MARKER_RADIUS = 4
 export const MARKER_RING = 2
+/** Background-coloured stroke behind tick labels (N3). */
+export const LABEL_HALO_WIDTH = 3
 
 export const LABEL_FONT =
   '12px system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
@@ -43,6 +45,7 @@ export type Ctx2D = Pick<
   | "arc"
   | "fill"
   | "fillText"
+  | "strokeText"
   | "save"
   | "restore"
   | "fillStyle"
@@ -116,12 +119,17 @@ export function drawGraph(ctx: Ctx2D, input: DrawInput): GridLayout {
     ctx.stroke()
   }
 
-  // Tick labels, drawn over the curves.
+  // Tick labels, drawn after the curves with a background-coloured halo so curves
+  // never obscure them (N3).
   ctx.font = LABEL_FONT
   ctx.fillStyle = colors.axis
+  ctx.strokeStyle = colors.bg
+  ctx.lineWidth = LABEL_HALO_WIDTH
+  ctx.lineJoin = "round"
   for (const label of layout.labels) {
     ctx.textAlign = label.align
     ctx.textBaseline = label.baseline
+    ctx.strokeText(label.text, label.x, label.y)
     ctx.fillText(label.text, label.x, label.y)
   }
 
