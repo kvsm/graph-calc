@@ -128,11 +128,11 @@ test.describe('#23 toolbar', () => {
   test('zoom buttons are disabled at the zoom limits', async ({ page }) => {
     await focusGraph(page)
     for (let i = 0; i < 26; i++) await page.keyboard.press('+')
-    await expect(toolbarButton(page, 'Zoom in')).toBeDisabled()
+    await expect(toolbarButton(page, 'Zoom in')).toHaveAttribute('aria-disabled', 'true')
     expect(spanX(await readViewport(page))).toBeGreaterThanOrEqual(1e-6 * 0.99)
     await focusGraph(page)
     for (let i = 0; i < 46; i++) await page.keyboard.press('-')
-    await expect(toolbarButton(page, 'Zoom out')).toBeDisabled()
+    await expect(toolbarButton(page, 'Zoom out')).toHaveAttribute('aria-disabled', 'true')
     expect(spanX(await readViewport(page))).toBeLessThanOrEqual(1e6 * 1.01)
   })
 
@@ -141,7 +141,9 @@ test.describe('#23 toolbar', () => {
       const button = toolbarButton(page, name)
       await button.focus()
       for (let i = 0; i < 45; i++) await page.keyboard.press(key)
-      await expect(button).toBeDisabled() // disabled or aria-disabled
+      // CR-07: aria-disabled (not the disabled attribute), so the button keeps focus.
+      await expect(button).toHaveAttribute('aria-disabled', 'true')
+      await expect(button).not.toHaveAttribute('disabled', /.*/)
       const active = await page.evaluate(() => {
         const el = document.activeElement
         return {
@@ -331,7 +333,9 @@ test.describe('#24 keyboard on the focused canvas', () => {
     await page.keyboard.press('Shift+ArrowRight')
     await expect(traceCoords(page)).not.toHaveText(`(${c1.x}, ${c1.y})`)
     const c2 = parseCoords((await traceCoords(page).textContent()) ?? '')
-    expectClose(num(c2.x) - num(c1.x), major, minor * 1e-3, 'Shift+ArrowRight moves one major grid step')
+    // Shift moves to the next major grid line (x snaps to the major grid), e.g. 0.4 → 2.
+    const nextMajor = (Math.floor(num(c1.x) / major + 1e-9) + 1) * major
+    expectClose(num(c2.x), nextMajor, minor * 1e-3, 'Shift+ArrowRight moves to the next major grid line')
     expectClose(num(c2.y), Math.sin(num(c2.x)), 0.001, 'still on the curve')
 
     // Trace keys must not pan the view.
@@ -528,11 +532,12 @@ test.describe('UX-01 empty-state hint', () => {
   async function deleteAll(page: Page) {
     await page.getByRole('button', { name: 'More options for expression 1', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Delete' }).click()
-    await expect(page.getByText('Add an expression to see it graphed.', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('empty-graph-hint')).toBeVisible()
   }
 
   async function expectHintClearOfXAxis(page: Page) {
-    const hint = page.getByText('Add an expression to see it graphed.', { exact: true })
+    const hint = page.getByTestId('empty-graph-hint')
+    await expect(hint).toHaveText('Add an expression to see it graphed.')
     // An HTML element, not canvas paint.
     expect(await hint.evaluate((el) => el.tagName.toLowerCase())).not.toBe('canvas')
     await expect(hint).not.toHaveAttribute('role', 'img')
@@ -568,5 +573,17 @@ test.describe('UX-01 empty-state hint', () => {
       expect(box.y + box.height).toBeLessThanOrEqual(await sheetTop(page))
       expect(box.y).toBeGreaterThanOrEqual(0)
     })
+  })
+})
+
+test.describe('#23 toolbar on phones (CR-05)', () => {
+  test.use({ viewport: { width: 375, height: 812 }, hasTouch: true })
+
+  test('is a horizontal toolbar row', async ({ page }) => {
+    await expect(toolbar(page)).toHaveAttribute('aria-orientation', 'horizontal')
+    const tops = await toolbar(page)
+      .getByRole('button')
+      .evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)))
+    expect(new Set(tops).size).toBe(1)
   })
 })
