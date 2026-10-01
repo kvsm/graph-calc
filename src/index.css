@@ -69,7 +69,8 @@
     --accent-foreground: oklch(0.205 0 0);
     --destructive: #b91c1c;
     --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
+    /* 3.64:1 on white, 3.49:1 on hover rows (CR-17) */
+    --input: oklch(0.62 0 0);
     --ring: #2563eb;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -109,7 +110,8 @@
     --accent-foreground: oklch(0.985 0 0);
     --destructive: #f87171;
     --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
+    /* 3.77:1 on #0a0a0a, 3.38:1 on hover rows (CR-17) */
+    --input: oklch(1 0 0 / 40%);
     --ring: #60a5fa;
     --graph-bg: #0a0a0a;
     --graph-grid: #1a1a1a;
@@ -131,6 +133,11 @@
 }
 
 @layer base {
+  /* Solid focus indicator for anything without its own ring (CR-06): 5.17:1 light, 7.79:1 dark. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
   * {
     @apply border-border outline-ring/50;
     }
@@ -146,4 +153,16 @@
   html {
     @apply font-sans;
     }
+}
+/* Reduced motion (UX-SPEC §9.6, CR-12): also neutralises the tw-animate-css
+   enter/exit animations used by shadcn dialogs, popovers, menus and tooltips. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
