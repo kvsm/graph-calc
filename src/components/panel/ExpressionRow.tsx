@@ -17,6 +17,7 @@ import { Toggle } from "@/components/ui/toggle"
 import type { AppActions } from "@/hooks/useAppStore"
 import { resolveParameter } from "@/state/derive"
 import type { ExpressionItem, ExpressionStatus, Parameter } from "@/state/types"
+import { ErrorText, errorToSpeech } from "@/components/ErrorText"
 import { ColorPicker } from "./ColorPicker"
 import { HintTooltip } from "./HintTooltip"
 import { ParameterSlider } from "./ParameterSlider"
@@ -93,7 +94,7 @@ function ExpressionRowImpl({
     setErrorShown(true)
     if (error && lastAnnounced.current !== error.message) {
       lastAnnounced.current = error.message
-      announce(`Expression ${index}: ${error.message}`)
+      announce(`Expression ${index}: ${errorToSpeech(error)}`)
     }
   }
 
@@ -276,7 +277,7 @@ function ExpressionRowImpl({
         {showError && (
           <p id={errorId} className="flex gap-1 pt-1 text-xs text-destructive">
             <AlertCircleIcon aria-hidden className="mt-px size-3.5 shrink-0" />
-            <span>{error.message}</span>
+            <ErrorText error={error} />
           </p>
         )}
 

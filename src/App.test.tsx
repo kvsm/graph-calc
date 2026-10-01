@@ -46,6 +46,19 @@ afterEach(() => {
 const input = (n: number) => screen.getByRole("textbox", { name: `Expression ${n}` })
 const liveRegion = () => document.getElementById(LIVE_REGION_ID)!
 
+/** The error line for an input (via aria-describedby), or null. */
+function errorLine(el: HTMLElement): HTMLElement | null {
+  const id = el.getAttribute("aria-describedby")
+  return id ? document.getElementById(id) : null
+}
+
+/** Text a sighted user sees: excludes sr-only spoken names. */
+function visibleText(el: HTMLElement): string {
+  const clone = el.cloneNode(true) as HTMLElement
+  clone.querySelectorAll(".sr-only").forEach((n) => n.remove())
+  return (clone.textContent ?? "").trim()
+}
+
 async function waitForPlots(count: number) {
   await waitFor(() => expect(graph.props?.plots).toHaveLength(count))
 }
@@ -124,10 +137,12 @@ describe("expression input (§2–§3)", () => {
     // Not immediately (no flashing while typing)…
     expect(input(1)).not.toHaveAttribute("aria-invalid")
     // …but after 600ms of no typing.
-    const error = await screen.findByText('Missing closing bracket ")".', {}, { timeout: 1500 })
-    expect(input(1)).toHaveAttribute("aria-invalid", "true")
-    expect(input(1)).toHaveAttribute("aria-describedby", error.closest("p")!.id)
-    expect(error.closest("p")!.id).toMatch(/^expr-.+-error$/)
+    await waitFor(() => expect(input(1)).toHaveAttribute("aria-invalid", "true"), { timeout: 1500 })
+    const error = errorLine(input(1))!
+    expect(error.id).toMatch(/^expr-.+-error$/)
+    expect(visibleText(error)).toBe("Missing closing bracket ).")
+    // The token renders as a code span (UX-13).
+    expect(error.querySelector("code")).toHaveTextContent(")")
   })
 
   it("shows the error immediately on blur and announces it", async () => {
@@ -136,23 +151,29 @@ describe("expression input (§2–§3)", () => {
     await user.clear(input(1))
     await user.type(input(1), "foo(x)")
     await user.tab()
-    expect(
-      screen.getByText('Unknown function "foo". Try "sin", "cos", "tan", "sqrt", "abs", "ln", "log" or "exp".'),
-    ).toBeInTheDocument()
+    expect(visibleText(errorLine(input(1))!)).toBe(
+      "Unknown function foo. Try sin, cos, tan, sqrt, abs, ln, log or exp.",
+    )
     await waitFor(() =>
       expect(liveRegion()).toHaveTextContent(
-        'Expression 1: Unknown function "foo". Try "sin", "cos", "tan", "sqrt", "abs", "ln", "log" or "exp".',
+        "Expression 1: Unknown function foo. Try sin, cos, tan, sqrt, abs, ln, log or exp.",
       ),
     )
   })
 
-  it("announces the exact §3.1 message on blur", async () => {
+  it("announces the spoken form of the §3.1 message on blur (§9.2)", async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.clear(input(1))
     await user.type(input(1), "sin(")
     await user.tab()
-    await waitFor(() => expect(liveRegion()).toHaveTextContent('Expression 1: Missing closing bracket ")".'))
+    await waitFor(() => expect(liveRegion()).toHaveTextContent(/^Expression 1: Missing closing bracket\.$/))
+    await user.clear(input(1))
+    await user.type(input(1), "2 +")
+    await user.tab()
+    await waitFor(() =>
+      expect(liveRegion()).toHaveTextContent(/^Expression 1: Expression ends unexpectedly after plus sign\.$/),
+    )
   })
 
   it("sinx plots as sin(x) without creating sliders", async () => {
@@ -171,9 +192,10 @@ describe("expression input (§2–§3)", () => {
     await user.clear(input(1))
     await user.type(input(1), "2 +")
     await user.tab()
-    expect(screen.getByText('Expression ends unexpectedly after "+".')).toBeInTheDocument()
+    expect(visibleText(errorLine(input(1))!)).toBe("Expression ends unexpectedly after +.")
     await user.type(input(1), " 1")
-    expect(screen.queryByText('Expression ends unexpectedly after "+".')).not.toBeInTheDocument()
+    expect(errorLine(input(1))).toBeNull()
+    expect(document.querySelector('[id^="expr-"][id$="-error"]')).toBeNull()
     expect(input(1)).not.toHaveAttribute("aria-invalid")
   })
 
