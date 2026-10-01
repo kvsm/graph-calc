@@ -19,7 +19,7 @@ describe("parseCached / currentError", () => {
     expect(currentError("")).toBeNull()
     expect(currentError("   ")).toBeNull()
     expect(currentError("x^2")).toBeNull()
-    expect(currentError("sin(")?.message).toBe("Missing closing bracket ).")
+    expect(currentError("sin(")?.message).toBe('Missing closing bracket ")".')
   })
 })
 

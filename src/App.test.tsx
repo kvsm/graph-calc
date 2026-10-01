@@ -124,7 +124,7 @@ describe("expression input (§2–§3)", () => {
     // Not immediately (no flashing while typing)…
     expect(input(1)).not.toHaveAttribute("aria-invalid")
     // …but after 600ms of no typing.
-    const error = await screen.findByText("Missing closing bracket ).", {}, { timeout: 1500 })
+    const error = await screen.findByText('Missing closing bracket ")".', {}, { timeout: 1500 })
     expect(input(1)).toHaveAttribute("aria-invalid", "true")
     expect(input(1)).toHaveAttribute("aria-describedby", error.closest("p")!.id)
     expect(error.closest("p")!.id).toMatch(/^expr-.+-error$/)
@@ -137,11 +137,11 @@ describe("expression input (§2–§3)", () => {
     await user.type(input(1), "foo(x)")
     await user.tab()
     expect(
-      screen.getByText('Unknown function "foo". Try sin, cos, tan, sqrt, abs, ln, log or exp.'),
+      screen.getByText('Unknown function "foo". Try "sin", "cos", "tan", "sqrt", "abs", "ln", "log" or "exp".'),
     ).toBeInTheDocument()
     await waitFor(() =>
       expect(liveRegion()).toHaveTextContent(
-        'Expression 1: Unknown function "foo". Try sin, cos, tan, sqrt, abs, ln, log or exp.',
+        'Expression 1: Unknown function "foo". Try "sin", "cos", "tan", "sqrt", "abs", "ln", "log" or "exp".',
       ),
     )
   })
@@ -152,7 +152,7 @@ describe("expression input (§2–§3)", () => {
     await user.clear(input(1))
     await user.type(input(1), "sin(")
     await user.tab()
-    await waitFor(() => expect(liveRegion()).toHaveTextContent("Expression 1: Missing closing bracket )."))
+    await waitFor(() => expect(liveRegion()).toHaveTextContent('Expression 1: Missing closing bracket ")".'))
   })
 
   it("sinx plots as sin(x) without creating sliders", async () => {
@@ -171,9 +171,9 @@ describe("expression input (§2–§3)", () => {
     await user.clear(input(1))
     await user.type(input(1), "2 +")
     await user.tab()
-    expect(screen.getByText("Expression ends unexpectedly after +.")).toBeInTheDocument()
+    expect(screen.getByText('Expression ends unexpectedly after "+".')).toBeInTheDocument()
     await user.type(input(1), " 1")
-    expect(screen.queryByText("Expression ends unexpectedly after +.")).not.toBeInTheDocument()
+    expect(screen.queryByText('Expression ends unexpectedly after "+".')).not.toBeInTheDocument()
     expect(input(1)).not.toHaveAttribute("aria-invalid")
   })
 

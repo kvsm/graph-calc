@@ -1,6 +1,12 @@
 import { compileAst, type Params } from './compile'
-import { ExpressionSyntaxError, fallbackMessage, type ExpressionError } from './errors'
-import { isKnownConstant, isKnownFunction } from './functions'
+import {
+  ExpressionSyntaxError,
+  makeError,
+  messages,
+  type ErrorPart,
+  type ExpressionError,
+} from './errors'
+import { CONSTANTS, isKnownConstant, isKnownFunction } from './functions'
 import { parseToAst } from './mathjs'
 
 export type ExpressionForm =
@@ -40,19 +46,15 @@ export const MAX_INPUT_LENGTH = 500
 /** Characters allowed in the raw input (before normalisation). */
 const ALLOWED_CHAR = /[A-Za-z0-9\s.,+\-*/^()=_Ͱ-Ͽ×·⋅÷−²³]/
 
-const ONLY_Y_SUPPORTED = 'Only y = … is supported. Write it as y = … or just the expression.'
 
-function fail(code: ExpressionError['code'], message: string, position?: number): ParseResult {
-  return {
-    ok: false,
-    error: position === undefined ? { code, message } : { code, message, position },
-  }
+function fail(code: ExpressionError['code'], parts: ErrorPart[], position?: number): ParseResult {
+  return { ok: false, error: makeError(code, parts, position) }
 }
 
 function checkCharacters(input: string): ParseResult | null {
   for (let i = 0; i < input.length; i++) {
     if (!ALLOWED_CHAR.test(input[i])) {
-      return fail('invalid-character', fallbackMessage(input[i]), i)
+      return fail('invalid-character', messages.fallback(input[i]), i)
     }
   }
   return null
@@ -65,17 +67,13 @@ function checkParens(text: string, offset: number): ParseResult | null {
     if (text[i] === '(') open.push(i)
     else if (text[i] === ')') {
       if (open.length === 0) {
-        return fail(
-          'unbalanced-parens',
-          'Unexpected ) — there are more closing brackets than opening ones.',
-          offset + i,
-        )
+        return fail('unbalanced-parens', messages.unexpectedClosingBracket(), offset + i)
       }
       open.pop()
     }
   }
   if (open.length > 0) {
-    return fail('unbalanced-parens', 'Missing closing bracket ).', offset + open[open.length - 1])
+    return fail('unbalanced-parens', messages.missingClosingBracket(), offset + open[open.length - 1])
   }
   return null
 }
@@ -103,30 +101,22 @@ function classifyLhs(lhs: string, rhs: string, position: number): Lhs | ParseRes
   if (lhs === 'y') return { form: 'equation' }
   const match = LHS_FUNCTION.exec(lhs)
   if (match) {
-    if (match[2] !== 'x') return fail('invalid-lhs', fallbackMessage(match[2] || lhs), position)
+    if (match[2] !== 'x') return fail('invalid-lhs', messages.fallback(match[2] || lhs), position)
     const fnName = match[1]
-    if (fnName === 'x' || fnName === 'y') return fail('invalid-lhs', ONLY_Y_SUPPORTED, position)
+    if (fnName === 'x' || fnName === 'y') return fail('invalid-lhs', messages.onlyYOrF(), position)
     if (isKnownFunction(fnName) || isKnownConstant(fnName)) {
-      return fail('invalid-lhs', `${fnName} is built in. Use another name, e.g. f(x) = …`, position)
+      return fail('invalid-lhs', messages.builtInName(fnName), position)
     }
     return { form: 'function', name: fnName }
   }
   if (isKnownConstant(lhs)) {
-    return fail(
-      'invalid-lhs',
-      `${lhs} is a constant, so it can't be changed. Only y = … is supported.`,
-      position,
-    )
+    return fail('invalid-lhs', messages.constantAssignment(lhs, CONSTANTS[lhs]), position)
   }
   if (SINGLE_LETTER.test(lhs) && lhs !== 'x' && NUMBER_LITERAL.test(rhs.replace(/\s/g, ''))) {
     // Looks like an attempt to define a parameter, e.g. "a = 5".
-    return fail(
-      'invalid-lhs',
-      `Only y = … is supported. To make a slider, just use ${lhs} in an expression, e.g. ${lhs}·sin(x).`,
-      position,
-    )
+    return fail('invalid-lhs', messages.sliderHint(lhs), position)
   }
-  return fail('invalid-lhs', ONLY_Y_SUPPORTED, position)
+  return fail('invalid-lhs', messages.onlyYOrF(), position)
 }
 
 /** Translate a raw mathjs parse error into a friendly message. */
@@ -141,19 +131,17 @@ function friendlyParseError(err: unknown, body: string, offset: number): ParseRe
     const last = body.trimEnd().slice(-1)
     return fail(
       'syntax',
-      /[+\-*/^,(]/.test(last)
-        ? `Expression ends unexpectedly after ${last}.`
-        : 'Expression ends unexpectedly.',
+      /[+\-*/^,(]/.test(last) ? messages.endsAfter(last) : messages.endsUnexpectedly(),
       position,
     )
   }
   if (/Parenthesis \) expected/i.test(raw)) {
-    return fail('unbalanced-parens', 'Missing closing bracket ).', position)
+    return fail('unbalanced-parens', messages.missingClosingBracket(), position)
   }
   const part = /Unexpected (?:part|operator) "?([^"\s]+)"?/.exec(raw)
-  if (part) return fail('syntax', fallbackMessage(part[1]), position)
+  if (part) return fail('syntax', messages.fallback(part[1]), position)
   const token = index === undefined ? undefined : body.slice(index).split(' ')[0]
-  return fail('syntax', fallbackMessage(token), position)
+  return fail('syntax', messages.fallback(token), position)
 }
 
 /**
@@ -165,25 +153,25 @@ export function parseExpression(input: string): ParseResult {
     return parseUnsafe(input)
   } catch (err) {
     if (err instanceof ExpressionSyntaxError) return { ok: false, error: err.toExpressionError() }
-    return fail('syntax', fallbackMessage())
+    return fail('syntax', messages.fallback())
   }
 }
 
 function parseUnsafe(input: string): ParseResult {
-  if (input.trim() === '') return fail('empty', 'Type an expression, e.g. y = x^2')
+  if (input.trim() === '') return fail('empty', messages.empty())
   if (input.length > MAX_INPUT_LENGTH) {
-    return fail('too-long', `This expression is too long. Keep it under ${MAX_INPUT_LENGTH} characters.`, MAX_INPUT_LENGTH)
+    return fail('too-long', messages.tooLong(MAX_INPUT_LENGTH), MAX_INPUT_LENGTH)
   }
 
   const powIndex = input.indexOf('**')
-  if (powIndex !== -1) return fail('syntax', 'Use ^ for powers, e.g. 2^x.', powIndex)
+  if (powIndex !== -1) return fail('syntax', messages.useCaret(), powIndex)
 
   const charError = checkCharacters(input)
   if (charError) return charError
 
   const firstEq = input.indexOf('=')
   if (firstEq !== -1 && input.indexOf('=', firstEq + 1) !== -1) {
-    return fail('multiple-equals', fallbackMessage('='), input.indexOf('=', firstEq + 1))
+    return fail('multiple-equals', messages.fallback('='), input.indexOf('=', firstEq + 1))
   }
 
   let form: ExpressionForm = 'bare'
@@ -206,9 +194,9 @@ function parseUnsafe(input: string): ParseResult {
     }
 
     const lhs = normalise(lhsRaw)
-    if (lhs === '') return fail('empty-lhs', ONLY_Y_SUPPORTED, firstEq)
+    if (lhs === '') return fail('empty-lhs', messages.onlyYOrF(), firstEq)
     if (normalise(rhsRaw) === '') {
-      return fail('empty-rhs', 'Nothing after =. Type an expression, e.g. y = 2x + 1.', firstEq)
+      return fail('empty-rhs', messages.nothingAfterEquals(), firstEq)
     }
     const lhsParens = checkParens(lhsRaw, lhsOffset)
     if (lhsParens) return lhsParens

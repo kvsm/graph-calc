@@ -6,7 +6,7 @@
  * with a friendly ExpressionSyntaxError. No mathjs code runs at evaluation time.
  */
 import type { MathNode } from 'mathjs'
-import { ExpressionSyntaxError, fallbackMessage } from './errors'
+import { ExpressionSyntaxError, messages, partsToText } from './errors'
 import {
   CONSTANTS,
   FUNCTIONS,
@@ -83,11 +83,10 @@ export function segmentIdentifier(name: string): IdentifierSegment[] {
   return segments
 }
 
-const addBrackets = (fn: string, arg = 'x') => `Add brackets: ${fn}(${arg}).`
 
 /** Upper bound on AST nodes compiled per expression (keeps sampling fast; CR-03). */
 export const MAX_NODES = 1000
-export const TOO_COMPLEX_MESSAGE = 'This expression is too complex to graph. Try splitting it up.'
+export const TOO_COMPLEX_MESSAGE = partsToText(messages.tooComplex())
 
 export interface CompileOptions {
   /** Extra names that may not appear (e.g. "f" in "f(x) = …"). */
@@ -98,13 +97,6 @@ export interface CompileOptions {
 function isAtomicSymbol(name: string): boolean {
   const parts = splitIdentifier(name)
   return parts !== null && parts.length === 1
-}
-
-function arityMessage(name: string, min: number, max: number): string {
-  const plural = (n: number) => (n === 1 ? 'value' : 'values')
-  if (min === max) return `${name} needs ${min} ${plural(min)}.`
-  if (max === Infinity) return `${name} needs at least ${min} ${plural(min)}.`
-  return `${name} needs ${min} or ${max} values.`
 }
 
 export function compileAst(root: MathNode, options: CompileOptions = {}): CompiledAst {
@@ -130,14 +122,14 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
       return () => value
     }
     if (RESERVED_SYMBOLS.has(name)) {
-      throw new ExpressionSyntaxError('uses-y', "y can't appear on the right-hand side.")
+      throw new ExpressionSyntaxError('uses-y', messages.cantAppearOnRight('y'))
     }
     if (reserved.has(name)) {
-      throw new ExpressionSyntaxError('self-reference', `${name} can't appear on the right-hand side.`)
+      throw new ExpressionSyntaxError('self-reference', messages.cantAppearOnRight(name))
     }
     if (isKnownFunction(name)) {
       // e.g. "sin x": a function used without brackets.
-      throw new ExpressionSyntaxError('missing-parens', addBrackets(name))
+      throw new ExpressionSyntaxError('missing-parens', messages.addBrackets(name))
     }
     if (isAtomicSymbol(name)) {
       seen.add(name)
@@ -146,7 +138,7 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
     const segments = segmentIdentifier(name)
     if (segments.some((s) => s.kind === 'fn')) return bracketFree(name, segments)
     const parts = splitIdentifier(name)
-    if (!parts) throw new ExpressionSyntaxError('syntax', fallbackMessage(name))
+    if (!parts) throw new ExpressionSyntaxError('syntax', messages.fallback(name))
     return product(parts.map(symbol))
   }
 
@@ -161,7 +153,7 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
     const letters = m?.[2] ?? text
     if (letters) {
       const parts = splitIdentifier(letters)
-      if (!parts) throw new ExpressionSyntaxError('syntax', fallbackMessage(whole))
+      if (!parts) throw new ExpressionSyntaxError('syntax', messages.fallback(whole))
       factors.push(...parts.map(symbol))
     }
     return factors
@@ -182,7 +174,7 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
       }
       const next = segments[i + 1]
       if (!next || next.kind !== 'plain') {
-        throw new ExpressionSyntaxError('missing-parens', addBrackets(seg.name))
+        throw new ExpressionSyntaxError('missing-parens', messages.addBrackets(seg.name))
       }
       factors.push(callFunction(seg.name, [product(plainFactors(next.text, whole))]))
       i += 1
@@ -199,7 +191,7 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
     if (isKnownFunction(name)) {
       throw new ExpressionSyntaxError(
         'missing-parens',
-        exp ? `Add brackets: ${name}(x)^${exp}.` : addBrackets(name),
+        exp ? messages.addBracketsPower(name, 'x', exp, false) : messages.addBrackets(name),
       )
     }
     if (isAtomicSymbol(name)) return
@@ -211,21 +203,19 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
     const arg = next?.kind === 'plain' ? next.text : 'x'
     throw new ExpressionSyntaxError(
       'missing-parens',
-      exp
-        ? `Add brackets: ${fnName}(${arg})^${exp} or ${fnName}(${arg}^${exp}).`
-        : addBrackets(fnName, arg),
+      exp ? messages.addBracketsPower(fnName, arg, exp, true) : messages.addBrackets(fnName, arg),
     )
   }
 
   const callFunction = (name: string, args: Evaluator[]): Evaluator => {
     const spec = FUNCTIONS[name]
     if (args.length === 0) {
-      throw new ExpressionSyntaxError('wrong-arg-count', `${name} needs a value, e.g. ${name}(x).`)
+      throw new ExpressionSyntaxError('wrong-arg-count', messages.needsValue(name))
     }
     if (args.length < spec.minArgs || args.length > spec.maxArgs) {
       throw new ExpressionSyntaxError(
         'wrong-arg-count',
-        arityMessage(name, spec.minArgs, spec.maxArgs),
+        messages.arity(name, spec.minArgs, spec.maxArgs),
       )
     }
     const { impl } = spec
@@ -242,12 +232,12 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
 
   const visit = (node: MathNode): Evaluator => {
     nodeCount += 1
-    if (nodeCount > MAX_NODES) throw new ExpressionSyntaxError('too-long', TOO_COMPLEX_MESSAGE)
+    if (nodeCount > MAX_NODES) throw new ExpressionSyntaxError('too-long', messages.tooComplex())
     switch (node.type) {
       case 'ConstantNode': {
         const { value } = node as unknown as { value: unknown }
         if (typeof value !== 'number') {
-          throw new ExpressionSyntaxError('unsupported-syntax', fallbackMessage(String(value)))
+          throw new ExpressionSyntaxError('unsupported-syntax', messages.fallback(String(value)))
         }
         return () => value
       }
@@ -269,12 +259,12 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
           const b = visit(args[1])
           return (x, p) => binary(a(x, p), b(x, p))
         }
-        throw new ExpressionSyntaxError('unsupported-syntax', fallbackMessage(op))
+        throw new ExpressionSyntaxError('unsupported-syntax', messages.fallback(op))
       }
       case 'FunctionNode': {
         const { fn, args } = node as unknown as { fn: MathNode; args: MathNode[] }
         if (fn.type !== 'SymbolNode') {
-          throw new ExpressionSyntaxError('unsupported-syntax', fallbackMessage(fn.toString()))
+          throw new ExpressionSyntaxError('unsupported-syntax', messages.fallback(fn.toString()))
         }
         const name = (fn as unknown as { name: string }).name
         if (isKnownFunction(name)) return callFunction(name, args.map(visit))
@@ -296,12 +286,12 @@ export function compileAst(root: MathNode, options: CompileOptions = {}): Compil
         throw new ExpressionSyntaxError(
           'unknown-function',
           lower !== name && isKnownFunction(lower)
-            ? `Unknown function "${name}". Did you mean ${lower}?`
-            : `Unknown function "${name}". Try sin, cos, tan, sqrt, abs, ln, log or exp.`,
+            ? messages.didYouMean(name, lower)
+            : messages.unknownFunction(name),
         )
       }
       default:
-        throw new ExpressionSyntaxError('unsupported-syntax', fallbackMessage(node.toString()))
+        throw new ExpressionSyntaxError('unsupported-syntax', messages.fallback(node.toString()))
     }
   }
 

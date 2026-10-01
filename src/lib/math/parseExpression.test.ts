@@ -176,20 +176,21 @@ describe('parseExpression: non-finite results become NaN gaps', () => {
 
 describe('parseExpression: error messages (UX-SPEC §3.1)', () => {
   it.each([
-    ['sin(', 'Missing closing bracket ).'],
-    ['sin(x))', 'Unexpected ) — there are more closing brackets than opening ones.'],
-    ['y =', 'Nothing after =. Type an expression, e.g. y = 2x + 1.'],
-    ['foo(x)', 'Unknown function "foo". Try sin, cos, tan, sqrt, abs, ln, log or exp.'],
-    ['2 +', 'Expression ends unexpectedly after +.'],
-    ['x = 3', 'Only y = … is supported. Write it as y = … or just the expression.'],
-    ['z = x', 'Only y = … is supported. Write it as y = … or just the expression.'],
-    ['sqrt()', 'sqrt needs a value, e.g. sqrt(x).'],
-    ['y = y + 1', "y can't appear on the right-hand side."],
-    ['2 ** x', 'Use ^ for powers, e.g. 2^x.'],
-    [
-      'a = 5',
-      'Only y = … is supported. To make a slider, just use a in an expression, e.g. a·sin(x).',
-    ],
+    ['sin(', 'Missing closing bracket ")".'],
+    ['sin(x))', 'Unexpected ")" - there are more closing brackets than opening ones.'],
+    ['y =', 'Nothing after "=". Type an expression, e.g. "y = 2x + 1".'],
+    ['foo(x)', 'Unknown function "foo". Try "sin", "cos", "tan", "sqrt", "abs", "ln", "log" or "exp".'],
+    ['2 +', 'Expression ends unexpectedly after "+".'],
+    ['x = 3', 'Only "y" or "f(x)" equations can be graphed, e.g. "y = 3x" or "f(x) = 3x".'],
+    ['z = x', 'Only "y" or "f(x)" equations can be graphed, e.g. "y = 3x" or "f(x) = 3x".'],
+    ['sqrt()', '"sqrt" needs a value, e.g. "sqrt(x)".'],
+    ['y = y + 1', '"y" can\'t appear on the right-hand side.'],
+    ['2 ** x', 'Use "^" for powers, e.g. "2^x".'],
+    ['a = 5', 'To make a slider, just use "a" in an expression, e.g. "y = a*sin(x)".'],
+    ['SIN(x)', 'Unknown function "SIN". Did you mean "sin"?'],
+    ['sin x', 'Add brackets: "sin(x)".'],
+    ['e = 5', '"e" is a constant (about 2.718), so it can\'t be set. Use another letter for a slider, e.g. "a".'],
+    ['f(x) =', 'Nothing after "=". Type an expression, e.g. "y = 2x + 1".'],
   ])('%s', (input, message) => {
     expect(err(input).message).toBe(message)
   })
@@ -243,8 +244,8 @@ describe('parseExpression: error messages (UX-SPEC §3.1)', () => {
   })
 
   it('gives arity errors for wrong argument counts', () => {
-    expect(err('log(1, 2, 3)').message).toBe('log needs 1 or 2 values.')
-    expect(err('atan2(x)').message).toBe('atan2 needs 2 values.')
+    expect(err('log(1, 2, 3)').message).toBe('"log" needs 1 or 2 values.')
+    expect(err('atan2(x)').message).toBe('"atan2" needs 2 values.')
   })
 })
 
@@ -321,13 +322,13 @@ describe('parseExpression: bracket-free functions (sinx)', () => {
   })
 
   it.each([
-    ['sin x', 'Add brackets: sin(x).'],
-    ['3 sin x', 'Add brackets: sin(x).'],
-    ['sin', 'Add brackets: sin(x).'],
-    ['xsin', 'Add brackets: sin(x).'],
-    ['sinx^2', 'Add brackets: sin(x)^2 or sin(x^2).'],
-    ['sin2x^2', 'Add brackets: sin(2x)^2 or sin(2x^2).'],
-    ['sin^2', 'Add brackets: sin(x)^2.'],
+    ['sin x', 'Add brackets: "sin(x)".'],
+    ['3 sin x', 'Add brackets: "sin(x)".'],
+    ['sin', 'Add brackets: "sin(x)".'],
+    ['xsin', 'Add brackets: "sin(x)".'],
+    ['sinx^2', 'Add brackets: "sin(x)^2" or "sin(x^2)".'],
+    ['sin2x^2', 'Add brackets: "sin(2x)^2" or "sin(2x^2)".'],
+    ['sin^2', 'Add brackets: "sin(x)^2".'],
   ])('%s asks for brackets', (input, message) => {
     const e = err(input)
     expect(e.code).toBe('missing-parens')
@@ -346,29 +347,33 @@ describe('parseExpression: left-hand side rules', () => {
   })
 
   it.each([
-    ['f(x) = y', "y can't appear on the right-hand side."],
-    ['f(x) = f(x)', "f can't appear on the right-hand side."],
-    ['f(x) = 2f', "f can't appear on the right-hand side."],
-    ['g(x) = x + g', "g can't appear on the right-hand side."],
-    ['y', "y can't appear on the right-hand side."],
+    ['f(x) = y', '"y" can\'t appear on the right-hand side.'],
+    ['f(x) = f(x)', '"f" can\'t appear on the right-hand side.'],
+    ['f(x) = 2f', '"f" can\'t appear on the right-hand side.'],
+    ['g(x) = x + g', '"g" can\'t appear on the right-hand side.'],
+    ['y', '"y" can\'t appear on the right-hand side.'],
     ['g(y) = y', "Couldn't understand this expression. Check for typos near \"y\"."],
   ])('%s', (input, message) => {
     expect(err(input).message).toBe(message)
   })
 
-  it.each(['e = 3', 'pi = 3', 'tau = 1'])('%s explains that the name is a constant', (input) => {
+  it.each([
+    ['e = 3', '2.718'],
+    ['pi = 3', '3.142'],
+    ['tau = 1', '6.283'],
+  ])('%s explains that the name is a constant', (input, approx) => {
     const name = input.split(' ')[0]
-    expect(err(input).message).toBe(`${name} is a constant, so it can't be changed. Only y = … is supported.`)
-  })
-
-  it.each(['a = -5', 'a = 2.5', 'a = 1e3'])('%s gets the slider hint', (input) => {
     expect(err(input).message).toBe(
-      'Only y = … is supported. To make a slider, just use a in an expression, e.g. a·sin(x).',
+      `"${name}" is a constant (about ${approx}), so it can't be set. Use another letter for a slider, e.g. "a".`,
     )
   })
 
+  it.each(['a = -5', 'a = 2.5', 'a = 1e3'])('%s gets the slider hint', (input) => {
+    expect(err(input).message).toBe('To make a slider, just use "a" in an expression, e.g. "y = a*sin(x)".')
+  })
+
   it('Y = x is not y (case-sensitive)', () => {
-    expect(err('Y = x').message).toBe('Only y = … is supported. Write it as y = … or just the expression.')
+    expect(err('Y = x').message).toBe('Only "y" or "f(x)" equations can be graphed, e.g. "y = 3x" or "f(x) = 3x".')
   })
 
   it('accepts x = y as the mirrored form of y = x', () => {
@@ -404,23 +409,23 @@ describe('parseExpression: precedence (pinned against mathjs changes)', () => {
 describe('parseExpression: more §3.1 wording', () => {
   it.each(['2 -', '2 *', '2 /', '2 ^', 'x^', 'sin(x) +'])('%s ends unexpectedly', (input) => {
     const op = input.trim().slice(-1)
-    expect(err(input).message).toBe(`Expression ends unexpectedly after ${op}.`)
+    expect(err(input).message).toBe(`Expression ends unexpectedly after "${op}".`)
   })
 
   it.each([
-    ['sin()', 'sin needs a value, e.g. sin(x).'],
-    ['log()', 'log needs a value, e.g. log(x).'],
-    ['ln(x, 2)', 'ln needs 1 value.'],
-    ['sin(x, 2)', 'sin needs 1 value.'],
+    ['sin()', '"sin" needs a value, e.g. "sin(x)".'],
+    ['log()', '"log" needs a value, e.g. "log(x)".'],
+    ['ln(x, 2)', '"ln" needs 1 value.'],
+    ['sin(x, 2)', '"sin" needs 1 value.'],
   ])('%s', (input, message) => {
     expect(err(input).message).toBe(message)
   })
 
   it.each([
-    [')(', 'Unexpected ) — there are more closing brackets than opening ones.', 0],
-    ['(x))', 'Unexpected ) — there are more closing brackets than opening ones.', 3],
-    ['((x)', 'Missing closing bracket ).', 0],
-    ['abs(x', 'Missing closing bracket ).', 3],
+    [')(', 'Unexpected ")" - there are more closing brackets than opening ones.', 0],
+    ['(x))', 'Unexpected ")" - there are more closing brackets than opening ones.', 3],
+    ['((x)', 'Missing closing bracket ")".', 0],
+    ['abs(x', 'Missing closing bracket ")".', 3],
   ])('%s', (input, message, position) => {
     const e = err(input)
     expect(e.message).toBe(message)
@@ -463,10 +468,10 @@ describe('parseExpression: review fixes (CR-02, CR-03, CR-19, UX-15)', () => {
   })
 
   it.each([
-    ['sin(x) = x', 'sin is built in. Use another name, e.g. f(x) = …'],
-    ['pi(x) = x', 'pi is built in. Use another name, e.g. f(x) = …'],
-    ['x(x) = 1', 'Only y = … is supported. Write it as y = … or just the expression.'],
-    ['y(x) = 1', 'Only y = … is supported. Write it as y = … or just the expression.'],
+    ['sin(x) = x', '"sin" is built in. Use another name, e.g. "f(x) = 3x".'],
+    ['pi(x) = x', '"pi" is built in. Use another name, e.g. "f(x) = 3x".'],
+    ['x(x) = 1', 'Only "y" or "f(x)" equations can be graphed, e.g. "y = 3x" or "f(x) = 3x".'],
+    ['y(x) = 1', 'Only "y" or "f(x)" equations can be graphed, e.g. "y = 3x" or "f(x) = 3x".'],
   ])('rejects reserved function names on the left: %s', (input, message) => {
     const e = err(input)
     expect(e.code).toBe('invalid-lhs')
@@ -474,8 +479,8 @@ describe('parseExpression: review fixes (CR-02, CR-03, CR-19, UX-15)', () => {
   })
 
   it('suggests the lower-case function name', () => {
-    expect(err('SIN(x)').message).toBe('Unknown function "SIN". Did you mean sin?')
-    expect(err('Sqrt(x)').message).toBe('Unknown function "Sqrt". Did you mean sqrt?')
-    expect(err('foo(x)').message).toBe('Unknown function "foo". Try sin, cos, tan, sqrt, abs, ln, log or exp.')
+    expect(err('SIN(x)').message).toBe('Unknown function "SIN". Did you mean "sin"?')
+    expect(err('Sqrt(x)').message).toBe('Unknown function "Sqrt". Did you mean "sqrt"?')
+    expect(err('foo(x)').message).toBe('Unknown function "foo". Try "sin", "cos", "tan", "sqrt", "abs", "ln", "log" or "exp".')
   })
 })

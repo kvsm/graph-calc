@@ -1,6 +1,7 @@
 export { MAX_INPUT_LENGTH, parseExpression } from './parseExpression'
 export type { CompiledExpression, ExpressionForm, ParseResult } from './parseExpression'
-export type { ExpressionError, ExpressionErrorCode } from './errors'
+export type { ErrorPart, ExpressionError, ExpressionErrorCode } from './errors'
+export { isRedundantSpoken, isToken, partsToSpeech, partsToText, spokenName, SYMBOL_NAMES } from './errors'
 export type { Params } from './compile'
 export { sampleFunction } from './sample'
 export type { Point, Segment, SampleOptions } from './sample'
