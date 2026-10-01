@@ -1,3 +1,40 @@
+# E2E results: fix round 2 (HEAD ba0b3b7, plus tests at de397e5)
+
+Author: tester. Suite: `npx playwright test` (Chromium). 206 tests.
+
+- **189 passed, 17 failed.**
+  - **16 are pending UX-13/14.** They are all in `errors.spec.ts` › #12 and need the new §3.1 copy from 87a6731,
+    which renders tokens as `<code>` spans with sr-only spoken names. They are expected to fail until
+    frontend-dev-2 and frontend-dev land UX-13/14, so they aren't triaged here.
+  - **1 is an app bug, listed below.**
+- **The 5 failures from the previous run are resolved:**
+  - Trace step: a test bug, fixed in 75750bc. Shift snaps to the next major grid line, which matches §5.2
+    "x snaps to that grid".
+  - Persistence round trip, panel collapse and theme persistence: these pass now, fixed by the app in ba0b3b7.
+  - Sheet toggle: now fails only on the handle height (bug D1 below). The peek and expanded heights are correct,
+    at 0.349 and 0.849 of the viewport.
+- **Test updates for the spec changes:**
+  - Grid-step trace (UX-17).
+  - `aria-disabled` zoom limits (CR-07), asserted directly.
+  - Phone toolbar `aria-orientation="horizontal"` (CR-05).
+  - `data-testid="empty-graph-hint"` (UX-01).
+  - §3.1 code-span copy (87a6731).
+
+## App bugs
+
+### D1. minor: the phone sheet handle is 43px tall, not 44px (owner: frontend-dev)
+- **Test:** `responsive.spec.ts` › #4 phone bottom sheet (375×812) › is a bottom sheet in peek state (~35%) that
+  toggles to ~85% by tap
+- **Spec:** §1.3 calls for a 44px-tall drag handle bar, and §9.5 requires targets of at least 44×44px under a
+  coarse pointer.
+- **Expected:** handle height ≥ 44px. **Actual:** 43px.
+- **Cause:** the header row is `h-11 border-b` (44px including its 1px bottom border, because of border-box).
+  The handle button is `absolute inset-0`, so it only fills the 43px padding box.
+- **Where:** `src/components/panel/ExpressionPanel.tsx:312` (the header) and `:317` (the button)
+- **Fix:** use `h-12` for the header, or extend the button over the border with `-bottom-px`.
+
+---
+
 # E2E results: Part B (UI at 9287c41)
 
 Author: tester. Suite: `npx playwright test` (Chromium). 166 tests.
