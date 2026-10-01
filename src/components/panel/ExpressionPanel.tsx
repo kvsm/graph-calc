@@ -314,7 +314,7 @@ function BottomSheet({
           type="button"
           aria-label="Resize expressions panel"
           aria-expanded={expanded}
-          className="absolute inset-0 touch-none rounded-t-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-inset"
+          className="absolute inset-x-0 top-0 -bottom-px touch-none rounded-t-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:ring-inset"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
